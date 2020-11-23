@@ -4,7 +4,7 @@
 #include <stdlib.h>
 
 //region macros
-/* checks if exit code is greates than 0, which means error has been occurred,
+/* checks if exit code is greater than 0, which means error has been occurred,
  * calls function that prints an error on the stderr and returns an error */
 #define CHECK_EXIT_CODE_RUN_PROGRAM_FUNCTION if(exit_code > 0)\
 {\
@@ -24,16 +24,18 @@ enum erorrs
 };
 //endregion
 
+/* contains information about delim string */ // TODO generalize
+typedef struct seps_t
+{
+    int seps_c;    /* number of separators user entered in delim string in commandline */
+    char *seps_v;   /* dynamically allocated array of chars that contains separators */
+} seps_t;
+
 //region structures
 /* contains information about arguments user entered in commandline */
 typedef struct
 {
-    /* contains information about delim string */
-    struct
-    {
-        int   seps_c;   /* number of separators user entered in delim string in commandline */
-        char *seps_v;   /* dynamically allocated array of chars that contains separators */
-    } seps_t;
+    seps_t seps;
 } clargs_t;
 
 /* contains information about a table */
@@ -43,6 +45,18 @@ typedef struct
     int param2;
 } table_t;
 //endregion
+
+/* frees all memory allocated by a table_t structure s */
+void free_table(table_t *s)
+{
+    (void) s;
+}
+
+/* frees all memory allocated by a clargs_t structure s */
+void free_clargs(clargs_t *s)
+{
+    free(s->seps.seps_v);
+}
 
 /**
  *  Adds an item to an array if this item is not represented in the array
@@ -56,28 +70,31 @@ typedef struct
  *         true, if item has been added to an array
  *         false, if item is already in the array or if error while allocating memory has been occurred
  */
-bool set_add_item(char* set, int *size, char item, int *exit_code)
+bool set_add_item(seps_t *set, char item, int *exit_code)
 {
 #ifdef SEPBUG
-    printf("line %d in %s -> size     =%d\n", __LINE__, __FUNCTION__, *size);
+    printf("line %d in %s -> size     =%d\n", __LINE__, __FUNCTION__, set->seps_c);
 #endif
-    for(int i = 0; i < *size; i++)
-        if(set[i] == item)
+    for(int i = 0; i < set->seps_c; i++)
+    {
+        printf("i =%d, size =%d, set[i] =%d\n", i , set->seps_c, set->seps_v[i]);
+        if(set->seps_v[i] == item)
             return false;
-
+    }
 #ifdef MEMBUG
-    printf("line %d in %s -> size bef =%d\n",__LINE__, __FUNCTION__, *size);
+    printf("line %d in %s -> size bef =%d\n",__LINE__, __FUNCTION__, set->seps_c);
 #endif
-    set = (char*)realloc(set, (unsigned long)++(*size) * sizeof(char));
-    if(set == NULL)
+
+    set->seps_v = (char *)realloc(set->seps_v, (unsigned long)++set->seps_c * sizeof(char));
+    if(set->seps_v == NULL)
     {
         *exit_code = ALLOCATING_ERROR;
         return false;
     }
 #ifdef MEMBUG
-    printf("line %d in %s -> size aft =%d\n",__LINE__, __FUNCTION__, *size);
+    printf("line %d in %s -> size aft =%d\n",__LINE__, __FUNCTION__, set->seps_c);
 #endif
-    set[*size-1] = item;
+    set->seps_v[set->seps_c-1] = item;
     return true;
 }
 
@@ -91,15 +108,17 @@ bool set_add_item(char* set, int *size, char item, int *exit_code)
 void init_separators(int argc, char **argv, clargs_t *clargs, int *exit_code)
 {
     //region variables
-    clargs->seps_t.seps_c = 0;
-    clargs->seps_t.seps_v = NULL;
+    clargs->seps.seps_c = 0;
+    clargs->seps.seps_v = NULL;
+    char* sepsptr = NULL;
     int k = 0;
     //endregion
 
     /* if there is only name, functions and filename */
     if(argc > 3 && strcmp(argv[1], "-d"))
     {
-        set_add_item(clargs->seps_t.seps_v, &clargs->seps_t.seps_c, ' ', exit_code);
+        set_add_item(&(clargs->seps), ' ', exit_code);
+        CHECK_EXIT_CODE
     }
 
     /* if user entered -d flag and there are function names and filename in the commandline */
@@ -113,7 +132,7 @@ void init_separators(int argc, char **argv, clargs_t *clargs, int *exit_code)
                 *exit_code = UNSUPPORTED_SEPARATORS_ERROR;
                 return;
             }
-            set_add_item(clargs->seps_t.seps_v, &clargs->seps_t.seps_c, argv[2][k], exit_code);
+            set_add_item(&(clargs->seps), argv[2][k], exit_code);
             CHECK_EXIT_CODE
             k++;
         }
@@ -126,6 +145,7 @@ void init_separators(int argc, char **argv, clargs_t *clargs, int *exit_code)
         *exit_code = TOO_FEW_ARGS_ERROR;
         return;
     }
+    clargs->seps.seps_v = sepsptr;
 }
 
 void clargs_init(int argc, char **argv, clargs_t* clargs, int *exit_code)
