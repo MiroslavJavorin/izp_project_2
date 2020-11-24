@@ -13,8 +13,9 @@
 
 //region macros
 /*
- *  MEMBUG  - debug memory usage
- *  SEPSBUG - debug separators
+ *  MEMBUG   - debug memory usage
+ *  SEPSBUG  - debug separators
+ *  VALGRIND - catch valgrind messages
  * */
 
 /* checks if exit code is greater than 0, which means error has been occurred,
@@ -26,6 +27,16 @@
 }
 
 #define CHECK_EXIT_CODE if(*exit_code > 0){ return; }
+#define CHECK_ALLOC_ERR(arr) if(arr == NULL)\
+{\
+    *exit_code = ALLOCATING_ERROR;\
+    return;\
+}
+#define BUFF_S 1
+
+#define NEG(n) ( n = !n )
+
+#define FREE(arr) if(arr != NULL) { free(arr); }
 //endregion
 
 //region enums
@@ -39,14 +50,23 @@ enum erorrs
 
 //endregion
 
-/* contains information about delim string */ // TODO generalize
+//region structures
+/* contains information about delim string */
 typedef struct carr_t
 {
-    int   elems_c;    /* number of separators user entered in delim string in commandline */
-    char *elems_v;   /* dynamically allocated array of chars that contains separators */
+    unsigned int  elems_c; /* number of elements array contains */
+    char         *elems_v;   /* dynamically allocated array of chars  */
+    unsigned int  size;   /* size of an array */
 } carr_t;
 
-//region structures
+/* array of integers  */
+typedef struct iarr_t
+{
+    unsigned int  elems_c; /* number of elements array contains */
+    unsigned int* elems_v;   /* dynamically allocated array of chars  */
+    unsigned int  size;   /* size of an array */
+} iarr_t;
+
 /* contains information about arguments user entered in commandline */
 typedef struct
 {
@@ -54,26 +74,34 @@ typedef struct
     FILE  *ptr;
 } clargs_t;
 
+/* contains information about a row */
+typedef struct row_t
+{
+    carr_t      *cols_v; /* columns in the row */
+    unsigned int cols_c; /* number of filled cols */
+    unsigned int size;   /* size of allocated memory*/
+} row_t;
+
 /* contains information about a table */
 typedef struct
 {
-    carr_t***     table; /* table contains rows which contain cells */
+    row_t*        rows_v; /* table contains rows which contain cells */
     unsigned int  row_c; /* number of rows of the table */
-    unsigned int* col_c; /* number of columns of each row */
+    unsigned int  size;  /* size of allocated memory*/
 } table_t;
 //endregion
 
 /* frees all memory allocated by a table_t structure s */
-void free_table(table_t *s)
+void free_table(table_t *t)
 {
-    (void) s;
+    (void) t;
 }
 
 /* frees all memory allocated by a clargs_t structure s */
 void free_clargs(clargs_t *s)
 {
     if(s->seps.elems_v)
-        free(s->seps.elems_v);
+        FREE(s->seps.elems_v)
     if(s->ptr)
         fclose(s->ptr);
 }
@@ -82,6 +110,47 @@ void clear_data(table_t *table, clargs_t *clargs)
 {
     free_table(table);
     free_clargs(clargs);
+}
+
+void carr_ctor(carr_t *arr, int *exit_code)
+{
+    arr->elems_v = (char*)calloc(1, sizeof(char));
+    arr->size    = 1;
+    arr->elems_c = 0;
+    CHECK_ALLOC_ERR(arr->elems_v)
+}
+
+void a_carr(carr_t *arr, const char *item, int *exit_code)
+{
+    if(arr->size <= arr->elems_c + 2)
+    {
+        /* if no bytes are allocated */
+        if(!arr->size)
+        {
+            carr_ctor(arr, exit_code);
+            CHECK_EXIT_CODE
+        }else
+        {
+            arr->size += BUFF_S;
+            arr->elems_v = (char *)realloc(arr->elems_v, arr->size * sizeof(char));
+            CHECK_ALLOC_ERR(arr->elems_v)
+        }
+    }
+#ifdef MEMBUG
+    printf("line %d elems -> %s size -> %d elems_c -> %d item -> %c\n", __LINE__, arr->elems_v,arr->size ,
+            arr->elems_c, *item);
+#endif
+    arr->elems_v[arr->elems_c++] = *item;
+}
+
+
+bool set_contains(carr_t *set, char *item)
+{
+    for(unsigned int i = 0; i < set->elems_c; i++)
+        if(set->elems_v[i] == *item)
+            return true;
+
+    return false;
 }
 
 /**
@@ -96,22 +165,23 @@ void clear_data(table_t *table, clargs_t *clargs)
  *         true, if item has been added to an array
  *         false, if item is already in the array or if error while allocating memory has been occurred
  */
-bool set_add_item(carr_t *set, char item, int *exit_code)
+bool set_add_item(carr_t *set, char item, int *exit_code) // TODO make item a pointer to char
 {
-    for(int i = 0; i < set->elems_c; i++)
-        if(set->elems_v[i] == item)
-            return false;
-
-
-    set->elems_v = (char *)realloc(set->elems_v, (unsigned long)++set->elems_c * sizeof(char));
-    if(set->elems_v == NULL)
+    if(!set_contains(set, &item))
     {
-        *exit_code = ALLOCATING_ERROR;
-        return false;
+        set->elems_v = (char *)realloc(set->elems_v, ++set->elems_c * sizeof(char));
+        if(set->elems_v == NULL)
+        {
+            *exit_code = ALLOCATING_ERROR;
+            return false;
+        }
+
+        set->elems_v[set->elems_c - 1] = item;
+        return true;
     }
 
-    set->elems_v[set->elems_c-1] = item;
-    return true;
+    /* if this item is already in the set */
+    else return false;
 }
 
 /**
@@ -124,8 +194,8 @@ bool set_add_item(carr_t *set, char item, int *exit_code)
 void init_separators(const int argc, const char **argv, clargs_t *clargs, int *exit_code)
 {
     //region variables
-    clargs->seps.elems_c = 0;
-    clargs->seps.elems_v = NULL;
+    carr_ctor(&clargs->seps, exit_code);
+    CHECK_EXIT_CODE
     int k = 0;
     //endregion
 
@@ -161,14 +231,14 @@ void init_separators(const int argc, const char **argv, clargs_t *clargs, int *e
         return;
     }
 #ifdef SEPSBUG
-    printf("line %d in %s separators -> ", __LINE__, __FUNCTION__);
-    for(int i = 0; i < clargs->seps.elems_c; i++ )
+    printf("line %d separators -> ", __LINE__);
+    for(unsigned int i = 0; i < clargs->seps.elems_c; i++ )
         printf("%c",clargs->seps.elems_v[i]);
     putchar(10);
 #endif
 }
 
-void get_table(const int argc, const char *argv, table_t *table, clargs_t *clargs, int *exit_code)
+void get_table(const int argc, const char **argv, table_t *table, clargs_t *clargs, int *exit_code)
 {
     if((clargs->ptr = fopen(argv[argc - 1], "r+")) == NULL)
     {
@@ -179,8 +249,76 @@ void get_table(const int argc, const char *argv, table_t *table, clargs_t *clarg
     /* if file has been opened successfully */
     else
     {
+        table->rows_v = NULL;
+        table->size   = 0;
+        bool quoted;
+        char buff_ch;
 
+        /* go through all lines of the file */
+        for(table->row_c = 0; !feof(clargs->ptr); table->row_c++)
+        {
+            /* allocate new memory for rows in the table */
+            if(table->row_c + 2 >= table->size)
+            {
+                table->size  += BUFF_S;
+                table->rows_v = (row_t*)realloc(table->rows_v, table->size * sizeof(row_t));
+            }
+
+            quoted = false;
+            /* initialize a row */
+            table->rows_v[table->row_c].cols_c = 0;
+            table->rows_v[table->row_c].size   = BUFF_S;
+            table->rows_v[table->row_c].cols_v = (carr_t *)calloc(BUFF_S, sizeof(carr_t)); // TODO change to malloc?
+
+            do /* pass one line from file to the structure */
+            {
+                /* get one char from the file */
+                buff_ch = (char)fgetc(clargs->ptr);
+
+                /* parse next row */
+                if(buff_ch == '\n' || feof(clargs->ptr))  // TODO change to buff_ch == EOF
+                {
+                    break;
+                }
+
+                /* is the char is a separator and char is not quoted or if char is a right quote */
+                else if((set_contains(&clargs->seps, &buff_ch) && !quoted))
+                {
+                    /* increase current cell(number of cells in the row), allocate it with 0s */
+                    if(table->rows_v[table->row_c].cols_c + 2 >= table->rows_v[table->row_c].size)
+                    {
+                        /* allocate new columns */
+                        table->rows_v[table->row_c].size += BUFF_S;
+                        table->rows_v[table->row_c].cols_v = (carr_t*)realloc(table->rows_v[table->row_c].cols_v,
+                                table->rows_v[table->row_c].size * sizeof(carr_t) );
+                        CHECK_ALLOC_ERR(table->rows_v[table->row_c].cols_v)
+                    }
+                    /* increase number of columns in a row */
+                    table->rows_v[table->row_c].cols_c++;
+                    table->rows_v[table->row_c].cols_v[table->rows_v[table->row_c].cols_c].elems_c = 0;
+                    table->rows_v[table->row_c].cols_v[table->rows_v[table->row_c].cols_c].size    = 0;
+                    continue;
+                }
+
+                /* if character from file is a quotation mark which means cell will be quoted/unquoted*/
+                else if(buff_ch == '\"')
+                {
+                    NEG(quoted);
+                }
+
+                /* add a character to the cell */
+                a_carr(&table->rows_v[table->row_c].cols_v[table->rows_v[table->row_c].cols_c], &buff_ch, exit_code);
+                CHECK_EXIT_CODE
+            } while(1);
+        }
+        /* decrease number of cells */
+        table->rows_v[table->row_c].cols_v = (carr_t*)realloc(table->rows_v[table->row_c].cols_v,
+                table->rows_v[table->row_c].cols_c * sizeof(carr_t*));
+        table->rows_v[table->row_c].size = table->rows_v[table->row_c].cols_c;
     }
+    table->rows_v = (row_t*)realloc(table->rows_v, table->row_c * sizeof(row_t*));
+    table->size = table->row_c;
+    // TODO crct_num_of_cols(); // correct the number of columns(find the longest row and add columns in other rows)
 }
 
 void process_table(clargs_t *clargs, table_t *table, int *exit_code)
@@ -198,14 +336,15 @@ void print_error_message(int *exit_code)
             "Twenty afternoons in utopia",
             "Entered separators are not supported buy the program",
             "You've entered too few arguments",
-            "There is no file with this name"
+            "There is no file with this name",
+            "Why?! And we light up the sky!!!"
     };
 
     /* print an error message to stderr */
     fprintf(stderr, "Error %d: %s.\n", *exit_code, error_msg[*exit_code - 1]);
 }
 
-/**
+/*
  * Runs the program: initializes structures, then initializes commandline arguments, then processes the table
  * After every initializing checks for an exit_code to return it if the error has been occurred
  * Frees memory that was allocated while program was running.
@@ -226,7 +365,7 @@ int run_program(const int argc, const char **argv)
     get_table(argc, argv, &table, &clargs, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
-    clear_data(&table, &clargs);
+   // clear_data(&table, &clargs);
 
     /* exit_code is -1 means table has been processed successfully */
     return (exit_code == -1) ? 0 : exit_code;
