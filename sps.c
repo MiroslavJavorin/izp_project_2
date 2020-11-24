@@ -32,7 +32,7 @@
     *exit_code = ALLOCATING_ERROR;\
     return;\
 }
-#define BUFF_S 1
+#define BUFF_S 100
 
 #define NEG(n) ( n = !n )
 
@@ -94,7 +94,14 @@ typedef struct
 /* frees all memory allocated by a table_t structure s */
 void free_table(table_t *t)
 {
-    (void) t;
+    for(int row = 0; row < (int) t->size; row++)
+    {
+        for(int col = 0; col < (int) t->rows_v[row].size ;col++)
+        {
+            printf("%s ", t->rows_v[row].cols_v[col].elems_v);
+        }
+        printf("\n");
+    }
 }
 
 /* frees all memory allocated by a clargs_t structure s */
@@ -310,14 +317,17 @@ void get_table(const int argc, const char **argv, table_t *table, clargs_t *clar
                 a_carr(&table->rows_v[table->row_c].cols_v[table->rows_v[table->row_c].cols_c], &buff_ch, exit_code);
                 CHECK_EXIT_CODE
             } while(1);
+            /* decrease number of cells */
+            table->rows_v[table->row_c].cols_v = (carr_t *)realloc(table->rows_v[table->row_c].cols_v,
+                                                                   (table->rows_v[table->row_c].cols_c +1)* sizeof
+                                                                   (carr_t));
+            table->rows_v[table->row_c].size = table->rows_v[table->row_c].cols_c+1;
+            printf("size =%d elems =%d for row %d\n", table->rows_v[table->row_c].size, table->rows_v[table->row_c]
+                    .cols_c, table->row_c);
         }
-        /* decrease number of cells */
-        table->rows_v[table->row_c].cols_v = (carr_t*)realloc(table->rows_v[table->row_c].cols_v,
-                table->rows_v[table->row_c].cols_c * sizeof(carr_t*));
-        table->rows_v[table->row_c].size = table->rows_v[table->row_c].cols_c;
     }
-    table->rows_v = (row_t*)realloc(table->rows_v, table->row_c * sizeof(row_t*));
-    table->size = table->row_c;
+    table->rows_v = (row_t*)realloc(table->rows_v, (table->row_c +1)* sizeof(row_t*));
+    table->size = table->row_c+1;
     // TODO crct_num_of_cols(); // correct the number of columns(find the longest row and add columns in other rows)
 }
 
@@ -365,7 +375,7 @@ int run_program(const int argc, const char **argv)
     get_table(argc, argv, &table, &clargs, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
-   // clear_data(&table, &clargs);
+    clear_data(&table, &clargs);
 
     /* exit_code is -1 means table has been processed successfully */
     return (exit_code == -1) ? 0 : exit_code;
