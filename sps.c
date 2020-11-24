@@ -54,17 +54,17 @@ enum erorrs
 /* contains information about delim string */
 typedef struct carr_t
 {
-    unsigned int  elems_c; /* number of elements array contains */
+    int  elems_c; /* number of elements array contains */
     char         *elems_v;   /* dynamically allocated array of chars  */
-    unsigned int  size;   /* size of an array */
+    int  size;   /* size of an array */
 } carr_t;
 
 /* array of integers  */
 typedef struct iarr_t
 {
-    unsigned int  elems_c; /* number of elements array contains */
-    unsigned int* elems_v;   /* dynamically allocated array of chars  */
-    unsigned int  size;   /* size of an array */
+    int  elems_c; /* number of elements array contains */
+    int* elems_v;   /* dynamically allocated array of chars  */
+    int  size;   /* size of an array */
 } iarr_t;
 
 /* contains information about arguments user entered in commandline */
@@ -77,31 +77,30 @@ typedef struct
 /* contains information about a row */
 typedef struct row_t
 {
-    carr_t      *cols_v; /* columns in the row */
-    unsigned int cols_c; /* number of filled cols */
-    unsigned int size;   /* size of allocated memory*/
+    char *cols_v; /* columns in the row */
+    int cols_c; /* number of filled cols */
+    int size;   /* size of allocated memory*/
 } row_t;
 
 /* contains information about a table */
 typedef struct
 {
     row_t*        rows_v; /* table contains rows which contain cells */
-    unsigned int  row_c; /* number of rows of the table */
-    unsigned int  size;  /* size of allocated memory*/
+    int  row_c; /* number of rows of the table */
+    int  size;  /* size of allocated memory*/
 } table_t;
 //endregion
 
 /* frees all memory allocated by a table_t structure s */
 void free_table(table_t *t)
 {
-    for(int row = 0; row < (int) t->size; row++)
+    for(int row = t->size - 1; row >= 0; row--)
     {
-        for(int col = 0; col < (int) t->rows_v[row].size ;col++)
-        {
-            printf("%s ", t->rows_v[row].cols_v[col].elems_v);
-        }
-        printf("\n");
+        printf("row %d freed\n", row);
+        FREE(t->rows_v[row].cols_v)
     }
+    printf("table freed\n");
+    FREE(t->rows_v)
 }
 
 /* frees all memory allocated by a clargs_t structure s */
@@ -256,79 +255,69 @@ void get_table(const int argc, const char **argv, table_t *table, clargs_t *clar
     /* if file has been opened successfully */
     else
     {
-        table->rows_v = NULL;
-        table->size   = 0;
-        bool quoted;
-        char buff_ch;
+        table->row_c = 0;
+        printf("line %d table->row =%d\n",__LINE__, table->row_c);
+        table->rows_v = (row_t*) malloc(BUFF_S * sizeof(row_t));
+        table->size = BUFF_S;
+        CHECK_ALLOC_ERR(table->rows_v)
 
-        /* go through all lines of the file */
+        printf("line %d, table size =%d\n",__LINE__, table->size);
+        char buff;
+
         for(table->row_c = 0; !feof(clargs->ptr); table->row_c++)
         {
-            /* allocate new memory for rows in the table */
-            if(table->row_c + 2 >= table->size)
+            if(table->row_c + 1 >= table->size)
             {
+                printf("line %d table->row =%d\n",__LINE__, table->row_c);
+                /* allocate new memory for row */
                 table->size  += BUFF_S;
-                table->rows_v = (row_t*)realloc(table->rows_v, table->size * sizeof(row_t));
+                table->rows_v = (row_t*) realloc(table->rows_v, (table->size + 1) * sizeof(row_t));
+                CHECK_ALLOC_ERR(table->rows_v)
             }
 
-            quoted = false;
-            /* initialize a row */
-            table->rows_v[table->row_c].cols_c = 0;
+            /* allocate memory in the row */
             table->rows_v[table->row_c].size   = BUFF_S;
-            table->rows_v[table->row_c].cols_v = (carr_t *)calloc(BUFF_S, sizeof(carr_t)); // TODO change to malloc?
-
-            do /* pass one line from file to the structure */
+            table->rows_v[table->row_c].cols_v = (char*)malloc(BUFF_S * sizeof(char));
+            table->rows_v[table->row_c].cols_c = 0;
+            printf("line %d table->row =%d\n",__LINE__, table->row_c);
+            printf("line %d, malloced size =%d\n", __LINE__, table->rows_v[table->row_c].size);
+            CHECK_ALLOC_ERR(table->rows_v[table->row_c].cols_v)
+            do
             {
-                /* get one char from the file */
-                buff_ch = (char)fgetc(clargs->ptr);
-
-                /* parse next row */
-                if(buff_ch == '\n' || feof(clargs->ptr))  // TODO change to buff_ch == EOF
+                buff = (char)fgetc(clargs->ptr);
+                if(buff == '\n' || feof(clargs->ptr))
                 {
                     break;
                 }
 
-                /* is the char is a separator and char is not quoted or if char is a right quote */
-                else if((set_contains(&clargs->seps, &buff_ch) && !quoted))
+                /* add a new item to rhe array */
+                if(table->rows_v[table->row_c].cols_c + 1 >= table->rows_v[table->row_c].size)
                 {
-                    /* increase current cell(number of cells in the row), allocate it with 0s */
-                    if(table->rows_v[table->row_c].cols_c + 2 >= table->rows_v[table->row_c].size)
-                    {
-                        /* allocate new columns */
-                        table->rows_v[table->row_c].size += BUFF_S;
-                        table->rows_v[table->row_c].cols_v = (carr_t*)realloc(table->rows_v[table->row_c].cols_v,
-                                table->rows_v[table->row_c].size * sizeof(carr_t) );
-                        CHECK_ALLOC_ERR(table->rows_v[table->row_c].cols_v)
-                    }
-                    /* increase number of columns in a row */
-                    table->rows_v[table->row_c].cols_c++;
-                    table->rows_v[table->row_c].cols_v[table->rows_v[table->row_c].cols_c].elems_c = 0;
-                    table->rows_v[table->row_c].cols_v[table->rows_v[table->row_c].cols_c].size    = 0;
-                    continue;
+                    table->rows_v[table->row_c].size  += BUFF_S;
+                    table->rows_v[table->row_c].cols_v = (char*) realloc(table->rows_v[table->row_c].cols_v,
+                            (table->rows_v[table->row_c].size + 1) * sizeof(char));
+                    printf("line %d, realloced size =%d\n", __LINE__, table->rows_v[table->row_c].size);
+                    CHECK_ALLOC_ERR(table->rows_v[table->row_c].cols_v)
                 }
+                table->rows_v[table->row_c].cols_v[table->rows_v[table->row_c].cols_c++] = buff;
+            }
+            while(1);
+            table->rows_v[table->row_c].cols_v = (char*)realloc(table->rows_v[table->row_c].cols_v,
+                    (table->rows_v[table->row_c].cols_c+1) * sizeof(char));
+            CHECK_ALLOC_ERR(table->rows_v[table->row_c].cols_v)
 
-                /* if character from file is a quotation mark which means cell will be quoted/unquoted*/
-                else if(buff_ch == '\"')
-                {
-                    NEG(quoted);
-                }
-
-                /* add a character to the cell */
-                a_carr(&table->rows_v[table->row_c].cols_v[table->rows_v[table->row_c].cols_c], &buff_ch, exit_code);
-                CHECK_EXIT_CODE
-            } while(1);
-            /* decrease number of cells */
-            table->rows_v[table->row_c].cols_v = (carr_t *)realloc(table->rows_v[table->row_c].cols_v,
-                                                                   (table->rows_v[table->row_c].cols_c +1)* sizeof
-                                                                   (carr_t));
-            table->rows_v[table->row_c].size = table->rows_v[table->row_c].cols_c+1;
-            printf("size =%d elems =%d for row %d\n", table->rows_v[table->row_c].size, table->rows_v[table->row_c]
-                    .cols_c, table->row_c);
+            table->rows_v[table->row_c].size = table->rows_v[table->row_c].cols_c;
+            for(int i = 0; i < table->rows_v[table->row_c].size; i++)
+            {
+                printf("%c",table->rows_v[table->row_c].cols_v[i]);
+            }
+            putc(10, stdout);
         }
+        printf("table rows realloced %d to %d \n", table->size, table->row_c);
+        table->rows_v = (row_t*)realloc(table->rows_v, table->row_c  * sizeof(row_t));
+        table->size = table->row_c;
     }
-    table->rows_v = (row_t*)realloc(table->rows_v, (table->row_c +1)* sizeof(row_t*));
-    table->size = table->row_c+1;
-    // TODO crct_num_of_cols(); // correct the number of columns(find the longest row and add columns in other rows)
+
 }
 
 void process_table(clargs_t *clargs, table_t *table, int *exit_code)
