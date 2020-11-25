@@ -32,7 +32,7 @@
     *exit_code = W_ALLOCATING_ERROR;\
     return;\
 }
-#define BUFF_S  10
+#define BUFF_S  1
 
 #define NEG(n) ( n = !n );
 
@@ -95,7 +95,10 @@ void print_tab(tab_t *t, carr_t *seps)
 #endif
         for(int col = 0; col < t->rows_v[row].length ; col++ )
         {
-            fprintf(stdout, "%s%c", t->rows_v[row].cols_v[col].elems_v, seps->elems_v[0]);
+            if(col)
+                fprintf(stdout, "%c%s",seps->elems_v[0], t->rows_v[row].cols_v[col].elems_v);
+            else
+                fprintf(stdout, "%s", t->rows_v[row].cols_v[col].elems_v);
         }
         putc('\n',stdout);
     }
@@ -153,7 +156,7 @@ void table_ctor(tab_t *t, int* exit_code)
         /* allocate cols */
         for(int cols = 0; cols < BUFF_S; cols++)
         {
-            t->rows_v[row].cols_v[cols].elems_v = (char *)malloc(BUFF_S * sizeof(char));
+            t->rows_v[row].cols_v[cols].elems_v = (char *)calloc(BUFF_S,  sizeof(char));
             CHECK_ALLOC_ERR(t->rows_v[row].cols_v[cols].elems_v)
             t->rows_v[row].cols_v[cols].length  = BUFF_S;
             t->rows_v[row].cols_v[cols].elems_c = 0;
@@ -196,31 +199,11 @@ void a_carr(carr_t *arr, char *item, int *exit_code)
 /* returns true if given set contains the item*/
 bool set_contains(carr_t *set, char *item)
 {
-    if(*item == '<')
-    {
-        printf("searching item < in items(%d) ", set->elems_c);
-        bool is = false;
+    for(int i = 0; i < set->elems_c; i++)
+        if(set->elems_v[i] == *item)
+             return true;
 
-        for(int i = 0; i < set->elems_c; i++)
-        {
-            printf(" %c",set->elems_v[i]);
-            if(set->elems_v[i] == *item)
-            {
-                is = true;
-            }
-        }
-        putchar(10);
-        return is;
-    }
-    else
-   {
-        for(int i = 0; i < set->elems_c; i++)
-            if(set->elems_v[i] == *item)
-                 return true;
-
-         return false;
-   }
-
+     return false;
 }
 
 /**
@@ -352,9 +335,9 @@ void row_trim(row_t *row, int *exit_code)
         CHECK_EXIT_CODE
     }
 
-    row->cols_v = (carr_t*)realloc(row->cols_v, (row->cols_c+1 )* sizeof(carr_t));
+    row->cols_v = (carr_t*)realloc(row->cols_v, (row->cols_c)* sizeof(carr_t));
     CHECK_ALLOC_ERR(row->cols_v)
-    row->length = row->cols_c + 1;
+    row->length = row->cols_c;
 #ifdef MEMBUG
     printf("line %d trimmed cols = %d len = %d\n\n", __LINE__, row->cols_c, row->length);
 #endif
@@ -427,10 +410,10 @@ void get_table(const int argc, const char **argv, tab_t *t, clargs_t *clargs, in
     /* if file has been opened successfully */
     else
     {
+
         /* allocate a table */
         table_ctor(t, exit_code);
         CHECK_EXIT_CODE
-
         for(t->row_c = 0; !feof(clargs->ptr); t->row_c++ )
         {
             /* realloc the table to the new size */
