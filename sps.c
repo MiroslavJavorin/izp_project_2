@@ -17,7 +17,7 @@
 #include <stdlib.h>
 //endregion
 
-// FIXME delete globs
+// TODO delete globs
 int error_line_global = 0;
 
 //region macros
@@ -34,8 +34,10 @@ int error_line_global = 0;
     return exit_code;\
 }
 
+/* checks exit code in a void function */
 #define CHECK_EXIT_CODE if(*exit_code > 0){ return; error_line_global = __LINE__; }
 
+/* checking for an alloc error TODO change to a function */
 #define CHECK_ALLOC_ERR(arr) if(arr == NULL)\
 {\
     *exit_code = W_ALLOCATING_ERROR;\
@@ -43,15 +45,18 @@ int error_line_global = 0;
     return;\
 }
 
-#define BUFF_S 10
+#define MEMBLOCK 10 /* allocation step */
 
-#define NEG(n) ( n = !n );
+#define NOF_TMP_SELS 10 /* max number of temo selections */
 
-#define FREE(arr) if(arr != NULL) { free(arr); }
+#define NEG(n) ( n = !n ); /* negation of bool value */
+
+#define FREE(arr) if(arr) { free(arr); } /* check if a is not NULL */
 
 //endregion
 
 //region enums
+
 enum erorrs
 {
     W_ALLOCATING_ERROR = 1, /* error caused by a 'memory' function */
@@ -65,13 +70,47 @@ enum erorrs
 enum argpos
 {
     /* position with no delim means first argument after name of the program */
-    POSND = 1,
+    POSNDEL = 1,
     /* position with delim means first argument after delim string */
-    POSWD = 3
+    POSWDEL = 3
 };
+
+enum changesel
+{
+    ROW1COL1 = 1,
+    ROW2COL2 = 3
+};
+
+enum tedit
+{
+    IROW,
+    AROW,
+    DROW,
+    ICOL,
+    ACOL,
+    DCOL
+};
+
+typedef enum
+{
+    DAPROCOPT,
+    TAEDITOPT,
+    CHGSELOPT,
+    TMPSELOPT,
+    SEQENCOPT 
+} argopt;
 //endregion
 
 //region structures
+
+/* constains information about column selection */
+typedef struct 
+{
+    /* upper row, left column, lower row, right column */
+    int row_u, col_l, row_l, col_r;
+    bool isempty;
+} colsel_t;
+
 /* contains information about delim string */
 typedef struct carr_t
 {
@@ -84,14 +123,18 @@ typedef struct carr_t
 /* contains information about arguments user entered in commandline */
 typedef struct
 {
-
     carr_t seps;
-    bool defaultsep; /* means user hasn't entered any separator and ' ' is used as a searator */
+    bool defaultsep; /* means ' ' is used as a searator */
     FILE  *ptr;
+
+    /* column selections */
+    colsel_t currsel;               /* current selection */
+    colsel_t tempsel[NOF_TMP_SELS]; /* array with temporary commands */
+    
 } clargs_t;
 
 /* contains information about a row */
-typedef struct row_t
+typedef struct
 {
     carr_t *cols_v; /* columns in the row */
     int cols_c;     /* number of filled cols */
@@ -177,27 +220,27 @@ void clear_data(tab_t *t, clargs_t *clargs)
 
 void carr_ctor(carr_t *arr, int *exit_code)
 {
-    arr->elems_v = (char*)calloc(BUFF_S, sizeof(char)); // FIXME if someting foesnt work change to malloc
+    arr->elems_v = (char*)calloc(MEMBLOCK, sizeof(char)); // FIXME if someting foesnt work change to malloc
     CHECK_ALLOC_ERR(arr->elems_v)
 
-    arr->length = BUFF_S;
+    arr->length = MEMBLOCK;
     arr->elems_c = 0;
     arr->isempty = true;
 }
 
-/* allocating a row of size BUFF_S */
+/* allocating a row of size MEMBLOCK */
 void row_ctor(row_t *r, int *exit_code)
 {
-    r->cols_v = (carr_t*)malloc( BUFF_S * sizeof(carr_t));
+    r->cols_v = (carr_t*)malloc( MEMBLOCK * sizeof(carr_t));
     CHECK_ALLOC_ERR(r->cols_v)
 
     /* allocate cols */
-    for(int cols = 0; cols < BUFF_S; cols++)
+    for(int cols = 0; cols < MEMBLOCK; cols++)
     {
         carr_ctor(&r->cols_v[cols], exit_code);
         CHECK_EXIT_CODE
     }
-    r->length = BUFF_S;
+    r->length = MEMBLOCK;
     r->cols_c = 0;
 }
 
@@ -205,17 +248,17 @@ void row_ctor(row_t *r, int *exit_code)
 void table_ctor(tab_t *t, int* exit_code)
 {
     /* allocate thw new table */
-    t->rows_v = (row_t*)malloc(BUFF_S * sizeof(row_t));
+    t->rows_v = (row_t*)malloc(MEMBLOCK * sizeof(row_t));
     CHECK_ALLOC_ERR(t->rows_v)
 
     /* allocate rows */
-    for(int row = 0; row < BUFF_S; row++)
+    for(int row = 0; row < MEMBLOCK; row++)
     {
         row_ctor(&t->rows_v[row], exit_code);
         CHECK_EXIT_CODE
     }
     t->row_c = 0;
-    t->length = BUFF_S;
+    t->length = MEMBLOCK;
 }
 //endregion
 
@@ -233,7 +276,7 @@ void a_carr(carr_t *arr,const char item, int *exit_code)
     /* if there is no more space for the new element add new space */
     if(arr->elems_c + 1 >= arr->length )
     {
-        arr->length += BUFF_S;
+        arr->length += MEMBLOCK;
         arr->elems_v = (char*)realloc(arr->elems_v, arr->length  * sizeof(char));
         CHECK_ALLOC_ERR(arr->elems_v)
     }
@@ -271,6 +314,28 @@ void set_add_item(carr_t *set, char item, int *exit_code)
         CHECK_EXIT_CODE
     }
 }
+
+/**
+ * Returns the number of occurancef of the given char in the given array
+ *
+ * @param arr
+ * @param charchar
+ * @return
+ */
+int numoc(carr_t *carr, char charchar)
+{
+    int n = 0;
+    int i = 0;
+    while(i < carr->elems_c)
+    {
+        if(charchar == carr->elems_v[i])
+            n++;
+        i++;
+    }
+    return n;
+}
+
+
 //endregion
 
 //region TRIMS
@@ -280,7 +345,7 @@ void cell_trim(carr_t *arr, int *exit_code)
     if(!arr->elems_v)
     {
         printf("\t\t\t э кумыс\n");
-        arr->elems_v = (char*)calloc(BUFF_S ,sizeof(char));
+        arr->elems_v = (char*)calloc(MEMBLOCK ,sizeof(char));
         exit(228);
     }
 #ifdef SHOWTAB
@@ -396,7 +461,7 @@ void get_row(row_t *row, clargs_t *clargs, int *exit_code)
     {
         if(row->cols_c == row->length)
         {
-            row->length += BUFF_S;
+            row->length += MEMBLOCK;
             row->cols_v = (carr_t *)realloc(row->cols_v, row->length * sizeof(carr_t));
             CHECK_ALLOC_ERR(row->cols_v)
 
@@ -441,7 +506,7 @@ void get_table(const int *argc, const char **argv, tab_t *t, clargs_t *clargs, i
             /* realloc the table to the new size */
             if(t->row_c == t->length)
             {
-                t->length += BUFF_S;
+                t->length += MEMBLOCK;
                 t->rows_v  = (row_t*)realloc(t->rows_v, t->length * sizeof(row_t));
                 CHECK_ALLOC_ERR(t->rows_v)
                 /* create a row */
@@ -461,8 +526,60 @@ void get_table(const int *argc, const char **argv, tab_t *t, clargs_t *clargs, i
 //endregion
 
 //region COMMANDLINE ARGS PARSING
-void process_command(carr_t *command, int *exit_code, tab_t *t)
+
+void process_command(carr_t *command, clargs_t *clargs, tab_t *t, int *exit_code)
 {
+    /* number of occurances */
+    int changeselopt = numoc(command, ',');
+    char *currcom = calloc(command->elems_c, sizeof(char));
+    CHECK_ALLOC_ERR(currcom)
+    
+    /* means there's a Rows and columns selection in the command or (TODO)STR*/
+    if(changeselopt == ROW1COL1) 
+    {
+        sscanf(command->elems_v, "[%d,%d]", &clargs->currsel.row_u, &clargs->currsel.col_l);
+        sprintf(currcom, "[%d,%d]", clargs->currsel.row_u, clargs->currsel.col_l );
+
+        if(strcmp(currcom, command->elems_v) != 0)
+        {
+            printf("пошел нахуй чмо\n"); // TODO here can be a STR
+            error_line_global = __LINE__;
+            *exit_code = VAL_ARGUNSUP_ERROR;
+            return;
+        }
+        printf(" %d %d %d %d\n", clargs->currsel.row_u, clargs->currsel.col_l,
+               clargs->currsel.row_l, clargs->currsel.col_r);
+    }
+
+    /* if there is a wondow of cells */
+    else if(changeselopt == ROW2COL2)
+    {
+        sscanf(command->elems_v, "[%d,%d,%d,%d]",
+                &clargs->currsel.row_u, &clargs->currsel.col_l,
+                &clargs->currsel.row_l, &clargs->currsel.col_r
+                );
+        sprintf(currcom, "[%d,%d,%d,%d]",
+                clargs->currsel.row_u, clargs->currsel.col_l,
+                clargs->currsel.row_l, clargs->currsel.col_r);
+
+        if(strcmp(currcom, command->elems_v) != 0)
+        {
+            printf("пошел нахуй чмо\n"); // TODO here can be a STR
+            error_line_global = __LINE__;
+            *exit_code = VAL_ARGUNSUP_ERROR;
+            return;
+        }
+        printf(" %d %d %d %d\n", clargs->currsel.row_u, clargs->currsel.col_l,
+               clargs->currsel.row_l, clargs->currsel.col_r);
+    }
+
+    /* if there's another command */
+    else
+    {
+        // TODO [min] [max] , set STR , clear, swap [R,C], sum [R,C] avg [R,C], count [R,C], len [R,C]
+    }
+
+    FREE(currcom)
 
 }
 
@@ -475,7 +592,7 @@ void process_command(carr_t *command, int *exit_code, tab_t *t)
  * @param src a commandline argument
  * @param exit_code can be changed if the error occured
  */
-void parse_arg(carr_t *dst, const char *src, int *exit_code, tab_t *t)
+void parse_arg(carr_t *dst, const char *src, clargs_t *clargs, tab_t *t, int *exit_code)
 {
     int arglen = (int)strlen(src);
 
@@ -488,7 +605,7 @@ void parse_arg(carr_t *dst, const char *src, int *exit_code, tab_t *t)
     cell_trim(dst, exit_code);
     CHECK_EXIT_CODE
 
-    process_command(dst, exit_code, t);
+    process_command(dst, clargs, t, exit_code);
     CHECK_EXIT_CODE
 
     printf("%s\n", dst->elems_v);
@@ -555,7 +672,7 @@ void init_separators(const int *argc, const char **argv, clargs_t *clargs, int *
 void parse_clargs_proc_tab(const int *argc, const char **argv, tab_t *t, clargs_t *clargs, int *exit_code)
 {
     /* by default has value 1, which means there was no delim in the command line */
-    int clarg = (clargs->defaultsep) ? POSND : POSWD;
+    int clarg = (clargs->defaultsep) ? POSNDEL : POSWDEL;
     /*
      * TODO
         2 - for each element parse an array and
@@ -578,7 +695,7 @@ void parse_clargs_proc_tab(const int *argc, const char **argv, tab_t *t, clargs_
     for( ; clarg < *argc - 1; clarg++)
     {
         /* copies an argument to the array */
-        parse_arg(&barg, argv[clarg], exit_code, t);
+        parse_arg(&barg, argv[clarg], clargs, t, exit_code);
         CHECK_EXIT_CODE
 
         /* добавляешь то, что идет до ; или до конца аргумента, в строку DONE
