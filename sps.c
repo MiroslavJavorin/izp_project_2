@@ -4,15 +4,20 @@
  * @Author Skuratovich Aliaksandr xskura01@fit.vutbr.cz
 */
 
+// TODO в случае проблемы расширь таблицу
+
 //region includes
 #include <stdio.h>
 #include <string.h>
 #include <stdbool.h>
 #include <stdlib.h>
 //endregion
+// FIXME delete globs
+int error_line_global = 0;
 
 //region macros
 /*
+ *  SHOWTAB     - shows operations
  *  MEMBUG   - debug memory usage
  *  SEPSBUG  - debug separators
  *  TABUG    - debug for see the table
@@ -26,17 +31,21 @@
     return exit_code;\
 }
 
-#define CHECK_EXIT_CODE if(*exit_code > 0){ return; }
+#define CHECK_EXIT_CODE if(*exit_code > 0){ return; error_line_global = __LINE__; }
+
 #define CHECK_ALLOC_ERR(arr) if(arr == NULL)\
 {\
     *exit_code = W_ALLOCATING_ERROR;\
+    error_line_global = __LINE__;\
     return;\
 }
-#define BUFF_S  1
+
+#define BUFF_S 1
 
 #define NEG(n) ( n = !n );
 
 #define FREE(arr) if(arr != NULL) { free(arr); }
+
 //endregion
 
 //region enums
@@ -73,8 +82,8 @@ typedef struct
 typedef struct row_t
 {
     carr_t *cols_v; /* columns in the row */
-    int cols_c; /* number of filled cols */
-    int length;   /* size of allocated memory*/
+    int cols_c;     /* number of filled cols */
+    int length;     /* size of allocated memory*/
 } row_t;
 
 /* contains information about a table */
@@ -90,15 +99,14 @@ void print_tab(tab_t *t, carr_t *seps)
 {
     for(int row = 0; row < t->length; row++ )
     {
-#ifdef MEMBUG
-        printf("line %d row(%d) len %d\n", __LINE__,row,  t->rows_v[row].length);
-#endif
-        for(int col = 0; col < t->rows_v[row].length ; col++ )
+        for(int col = 0; col < t->rows_v[row].length; col++ )
         {
             if(col)
-                fprintf(stdout, "%c%s",seps->elems_v[0], t->rows_v[row].cols_v[col].elems_v);
-            else
-                fprintf(stdout, "%s", t->rows_v[row].cols_v[col].elems_v);
+                fputc(seps->elems_v[0], stdout);
+
+            for(int i = 0; i < t->rows_v[row].cols_v[col].elems_c; i++)
+                fputc(t->rows_v[row].cols_v[col].elems_v[i], stdout);
+
         }
         putc('\n',stdout);
     }
@@ -107,19 +115,31 @@ void print_tab(tab_t *t, carr_t *seps)
 /* frees all memory allocated by a table_t structure s */
 void free_table(tab_t *t)
 {
+
+#ifdef SHOWTAB
+    printf("line %d FREE TABLE Table :len %d ?= rows %d\n", __LINE__,t->length, t->row_c);
+#endif
     for(int row = t->length - 1; row >= 0; row--)
     {
-        printf("row %d with cols ", row);
+#ifdef SHOWTAB
+        printf("row %d with cols,| len = %d ?= colc %d\n", row, t->rows_v[row].length, t->rows_v[row].cols_c );
+#endif
         for(int col = t->rows_v[row].length - 1; col >= 0; col--)
         {
+#ifdef SHOWTAB
             printf(" %d", col);
+#endif
             FREE(t->rows_v[row].cols_v[col].elems_v)
         }
         FREE(t->rows_v[row].cols_v)
+#ifdef SHOWTAB
         printf(" freed\n");
+#endif
     }
     FREE(t->rows_v)
+#ifdef SHOWTAB
     printf("table freed\n");
+#endif
 }
 
 /* frees all memory allocated by a clargs_t structure s */
@@ -137,39 +157,46 @@ void clear_data(tab_t *t, clargs_t *clargs)
     free_clargs(clargs);
 }
 
+void carr_ctor(carr_t *arr, int *exit_code)
+{
+    arr->elems_v = (char*)calloc(BUFF_S, sizeof(char)); // FIXME if someting foesnt work change to malloc
+    CHECK_ALLOC_ERR(arr->elems_v)
+
+    arr->length = BUFF_S;
+    arr->elems_c = 0;
+    arr->isempty = true;
+}
+
+/* allocating a row of size BUFF_S */
+void row_ctor(row_t *r, int *exit_code)
+{
+    r->cols_v = (carr_t*)malloc( BUFF_S * sizeof(carr_t));
+    CHECK_ALLOC_ERR(r->cols_v)
+
+    /* allocate cols */
+    for(int cols = 0; cols < BUFF_S; cols++)
+    {
+        carr_ctor(&r->cols_v[cols], exit_code);
+        CHECK_EXIT_CODE
+    }
+    r->length = BUFF_S;
+    r->cols_c = 0;
+}
+
 void table_ctor(tab_t *t, int* exit_code)
 {
     /* allocate thw new table */
-    t->rows_v = (row_t *)malloc(BUFF_S * sizeof(row_t));
+    t->rows_v = (row_t*)malloc(BUFF_S * sizeof(row_t));
     CHECK_ALLOC_ERR(t->rows_v)
-    t->row_c = 0;
-    t->length = BUFF_S;
 
     /* allocate rows */
     for(int row = 0; row < BUFF_S; row++)
     {
-        t->rows_v[row].cols_v = (carr_t *)malloc(BUFF_S * sizeof(carr_t));
-        CHECK_ALLOC_ERR(t->rows_v[row].cols_v)
-        t->rows_v[row].length = BUFF_S;
-        t->rows_v[row].cols_c = 0;
-
-        /* allocate cols */
-        for(int cols = 0; cols < BUFF_S; cols++)
-        {
-            t->rows_v[row].cols_v[cols].elems_v = (char *)calloc(BUFF_S,  sizeof(char));
-            CHECK_ALLOC_ERR(t->rows_v[row].cols_v[cols].elems_v)
-            t->rows_v[row].cols_v[cols].length  = BUFF_S;
-            t->rows_v[row].cols_v[cols].elems_c = 0;
-        }
+        row_ctor(&t->rows_v[row], exit_code);
+        CHECK_EXIT_CODE
     }
-}
-
-void carr_ctor(carr_t *arr, int *exit_code)
-{
-    arr->elems_v = (char*)malloc((BUFF_S) * sizeof(char));
-    CHECK_ALLOC_ERR(arr->elems_v)
-    arr->length    = BUFF_S;
-    arr->elems_c   = 0;
+    t->row_c = 0;
+    t->length = BUFF_S;
 }
 
 /**
@@ -182,17 +209,14 @@ void carr_ctor(carr_t *arr, int *exit_code)
  */
 void a_carr(carr_t *arr, char *item, int *exit_code)
 {
-#ifdef MEMBUG
-    if(!arr->length){ printf("\t\t\tline %d UNALLOCADED arr!!!. len == 0\n ", __LINE__);}
-#endif
     /* if there is no more space for the new element add new space */
-    if(arr->elems_c == arr->length)
+    if(arr->elems_c + 1 >= arr->length )
     {
         arr->length += BUFF_S;
-        arr->elems_v = (char*)realloc(arr->elems_v, arr->length * sizeof(char));
+        arr->elems_v = (char*)realloc(arr->elems_v, arr->length  * sizeof(char));
         CHECK_ALLOC_ERR(arr->elems_v)
     }
-
+    arr->isempty = false;
     arr->elems_v[arr->elems_c++] = *item;
 }
 
@@ -218,45 +242,15 @@ bool set_contains(carr_t *set, char *item)
  *         true, if item has been added to an array
  *         false, if item is already in the array or if error while allocating memory has been occurred
  */
-bool set_add_item(carr_t *set, char *item, int *exit_code) // TODO make item a pointer to char
+void set_add_item(carr_t *set, char *item, int *exit_code)
 {
     if(!set_contains(set, item))
     {
-        //set->elems_v = (char *)realloc(set->elems_v, ++set->elems_c * sizeof(char));
         a_carr(set, item, exit_code);
-        if(exit_code)
-        {
-            return false;
-        }
-
-//        set->elems_v[set->elems_c - 1] = item;
-        return true;
-    }
-
-    /* if this item is already in the set */
-    else return false;
-}
-
-/* trims an array of characters */
-void cell_trim(carr_t *arr, int *exit_code)
-{
-    if(arr->length >= arr->elems_c + 1)
-    {
-          arr->elems_v = (char*)realloc(arr->elems_v, (arr->elems_c + 1) * sizeof(char));
-          CHECK_ALLOC_ERR(arr->elems_v)
-
-          if(!arr->elems_c)
-              arr->isempty = true;
-          else
-              arr->isempty = false;
-
-          arr->length = arr->elems_c + 1; //FIXME change to arr->length = arr->elems_c + 1; блять
-    }
-    else
-    {
-        printf("line %d len %d els%d\n",__LINE__, arr->length, arr->elems_c);
+        CHECK_EXIT_CODE
     }
 }
+
 
 /**
  * Initializes an array of entered separators(DELIM)
@@ -280,7 +274,6 @@ void init_separators(const int argc, const char **argv, clargs_t *clargs, int *e
     {
         charchar = ' ';
         a_carr(&clargs->seps, &charchar, exit_code);
-        //set_add_item(&(clargs->seps), &ws, exit_code);
         CHECK_EXIT_CODE
     }
 
@@ -317,44 +310,100 @@ void init_separators(const int argc, const char **argv, clargs_t *clargs, int *e
 #endif
 }
 
+//region Trim
+
+/* trims an array of characters */
+void cell_trim(carr_t *arr, int *exit_code)
+{
+    if(!arr->elems_v)
+    {
+        printf("\t\t\t э кумыс\n");
+        arr->elems_v = (char*)calloc(BUFF_S ,sizeof(char));
+        exit(228);
+    }
+#ifdef SHOWTAB
+    printf("\t\t\tlen %d elems %d\n", arr->length, arr->elems_c);
+#endif
+    if(arr->length >= arr->elems_c + 1)
+    {
+        /* reallocate for elements and terminating 0 */
+        if(!arr->elems_c)
+            arr->elems_v = (char *)realloc(arr->elems_v, (arr->elems_c + 1) * sizeof(char));
+        else
+            arr->elems_v = (char *)realloc(arr->elems_v, arr->elems_c * sizeof(char));
+
+        CHECK_ALLOC_ERR(arr->elems_v)
+
+        arr->length = (arr->elems_c) ? arr->elems_c : 1;
+    }
+}
+
 void row_trim(row_t *row, int *exit_code)
 {
     /* trim all cells in the row */
-#ifdef MEMBUG
-    printf("line %d utrimmed cols = %d len = %d\n", __LINE__, row->cols_c, row->length);
+#ifdef SHOWTAB
+    printf("(%d) cols -> %d  len -> %d . \n", __LINE__, row->cols_c, row->length );
 #endif
-    for(int cell = row->cols_c; cell >= 0; cell-- ) // fixme блять вот тут пофикси
+    for(int cell = row->cols_c; cell >= 0; cell-- )
     {
-#ifdef TABUG
-        printf("line %d bef cell %d ----->>>>%s\n",__LINE__,cell, row->cols_v[cell].elems_v);
-        cell_trim(&row->cols_v[row->cols_c], exit_code);
-        CHECK_EXIT_CODE
-        printf("line %d aft cell %d col ----->>>>%s\n",__LINE__, cell,row->cols_v[cell].elems_v);
-#endif
         cell_trim(&row->cols_v[row->cols_c], exit_code);
         CHECK_EXIT_CODE
     }
 
-    row->cols_v = (carr_t*)realloc(row->cols_v, (row->cols_c)* sizeof(carr_t));
+    for(int i = row->length - 1; i > row->cols_c; i--)// FIXME ISSUE here
+    {    FREE(row->cols_v[i].elems_v)}
+
+    row->cols_v = (carr_t*)realloc(row->cols_v, (row->cols_c + 1) * sizeof(carr_t));
     CHECK_ALLOC_ERR(row->cols_v)
-    row->length = row->cols_c;
-#ifdef MEMBUG
-    printf("line %d trimmed cols = %d len = %d\n\n", __LINE__, row->cols_c, row->length);
-#endif
+    row->length = row->cols_c + 1;
 }
 
-/* gets a row from the file and adds it to the table */
-void get_row(row_t *row, clargs_t *clargs, int *exit_code)
+/* trims a table by reallocating rows and cols */
+void table_trim(tab_t *t, int *exit_code)
+{
+    int row;
+    /* free unused rows that have been alloacated */
+    if(t->row_c != t->length)
+    {
+        for(row = t->rows_v->length - 1; row >= t->row_c; row--)
+        {
+            for(int col = t->rows_v[row].length - 1; col >= 0; col--)
+                FREE(t->rows_v[row].cols_v[col].elems_v)
+            FREE(t->rows_v[row].cols_v)
+        }
+
+        t->rows_v = (row_t *)realloc(t->rows_v, t->row_c * sizeof(row_t));
+        CHECK_ALLOC_ERR(t->rows_v)
+        t->length = t->row_c;
+    }
+    /* trim each row */
+    for(row = 0; row < t->row_c; row++)
+    {
+#ifdef SHOWTAB
+        printf("(%d)  row %d len %d\n", __LINE__,row, t->rows_v[row].length);
+#endif
+        row_trim(&t->rows_v[row], exit_code);
+        CHECK_EXIT_CODE
+    }
+
+}
+//endregion
+
+/* returns true is newline or eof reached */
+bool get_cell(carr_t *col, clargs_t *clargs, int *exit_code)
 {
     char buff_c;
-    bool quoted = false; /* if separator in the cell is quoted, dont segregate collumns */
-    do
+    bool quoted = false;
+    for(col->elems_c = 0; ;)
     {
         buff_c = (char)fgetc(clargs->ptr);
         if(buff_c == '\n' || feof(clargs->ptr))
         {
             if(quoted) *exit_code = Q_DONT_MATCH_ERROR;
-            break;
+#ifdef SHOWTAB
+            printf("(%d)  \t\t\t%s\n", __LINE__, col->elems_v);
+#endif
+            return true;
         }
 
         /* start or end a quotation, where 34 is a quotation mark */
@@ -363,39 +412,48 @@ void get_row(row_t *row, clargs_t *clargs, int *exit_code)
             NEG(quoted)
         }
 
-        /* if the car is a separator and it is not quoted */
+        /* if the char is a separator and it is not quoted */
         else if(set_contains(&clargs->seps, &buff_c) && !quoted)
         {
-            /* if there is no more cells allocated allocate new cells */
-            if(row->cols_c + 1 >= row->length) // FIXME блять
-            {
-                row->length += BUFF_S;
-                row->cols_v  = (carr_t*)realloc(row->cols_v, row->length * sizeof(carr_t));
-                CHECK_ALLOC_ERR(row->cols_v)
-            }
-            carr_ctor(&row->cols_v[++row->cols_c], exit_code);
-            continue;
+#ifdef SHOWTAB
+            printf("(%d)  \t\t\t%s\n", __LINE__, col->elems_v);
+#endif
+            return false;
         }
+        a_carr(col, &buff_c, exit_code);
 
-        a_carr(&row->cols_v[row->cols_c], &buff_c, exit_code);
     }
-    while(1);
 }
 
-/* trims a table by reallocating rows and cols */
-void table_trim(tab_t *t, int *exit_code)
+/* gets a row from the file and adds it to the table */
+void get_row(row_t *row, clargs_t *clargs, int *exit_code)
 {
-#ifdef MEMBUG
-    printf("line %d in table_trim rows + 1 %d  len %d\n", __LINE__, t->row_c, t->length);
-#endif
-    for(int row = 0; row < t->row_c - 1; row++)
+    bool end;
+    for(row->cols_c = 0; !feof(clargs->ptr); row->cols_c++ )
     {
-        row_trim(&t->rows_v[row], exit_code);
+        if(row->cols_c == row->length)
+        {
+            row->length += BUFF_S;
+            row->cols_v = (carr_t *)realloc(row->cols_v, row->length * sizeof(carr_t));
+            CHECK_ALLOC_ERR(row->cols_v)
+
+            /* create a col */
+            carr_ctor(&row->cols_v[row->cols_c], exit_code);
+            CHECK_EXIT_CODE
+        }
+#ifdef SHOWTAB
+        printf("(%d)  \t\tcol %d\n", __LINE__, row->cols_c);
+#endif
+        end = get_cell(&row->cols_v[row->cols_c], clargs, exit_code);
         CHECK_EXIT_CODE
+        if(end)
+        {
+#ifdef SHOWTAB
+            printf("(%d)  \t\tlen %d\n", __LINE__, row->length);
+#endif
+            return;
+        }
     }
-    t->rows_v = (row_t*)realloc(t->rows_v, t->row_c * sizeof(row_t));
-    CHECK_ALLOC_ERR(t->rows_v)
-    t->length = t->row_c - 1;
 }
 
 void get_table(const int argc, const char **argv, tab_t *t, clargs_t *clargs, int *exit_code)
@@ -410,19 +468,25 @@ void get_table(const int argc, const char **argv, tab_t *t, clargs_t *clargs, in
     /* if file has been opened successfully */
     else
     {
-
         /* allocate a table */
         table_ctor(t, exit_code);
         CHECK_EXIT_CODE
+
+        /* write the table to the structure */
         for(t->row_c = 0; !feof(clargs->ptr); t->row_c++ )
         {
             /* realloc the table to the new size */
-            if(t->row_c + 1 == t->length)
+            if(t->row_c == t->length)
             {
                 t->length += BUFF_S;
                 t->rows_v  = (row_t*)realloc(t->rows_v, t->length * sizeof(row_t));
                 CHECK_ALLOC_ERR(t->rows_v)
+                /* create a row */
+                row_ctor(&t->rows_v[t->row_c], exit_code);
             }
+#ifdef SHOWTAB
+            printf("(%d)  row %d\n", __LINE__, t->row_c);
+#endif
             get_row(&t->rows_v[t->row_c], clargs, exit_code);
             CHECK_EXIT_CODE
         }
@@ -455,7 +519,7 @@ void print_error_message(int *exit_code)
     };
 
     /* print an error message to stderr */
-    fprintf(stderr, "Error %d: %s.\n", *exit_code, error_msg[*exit_code - 1]);
+    fprintf(stderr, "Error %d: %s occured on the line %d.\n", *exit_code, error_msg[*exit_code - 1], error_line_global);
 }
 
 /*
