@@ -112,6 +112,7 @@ void print_tab(tab_t *t, carr_t *seps)
     }
 }
 
+//region FREE MEM
 /* frees all memory allocated by a table_t structure s */
 void free_table(tab_t *t)
 {
@@ -156,6 +157,9 @@ void clear_data(tab_t *t, clargs_t *clargs)
     free_table(t);
     free_clargs(clargs);
 }
+//endregion
+
+//region CONSTRUCTORS
 
 void carr_ctor(carr_t *arr, int *exit_code)
 {
@@ -183,6 +187,7 @@ void row_ctor(row_t *r, int *exit_code)
     r->cols_c = 0;
 }
 
+/* creates a table by creating rows and columns */
 void table_ctor(tab_t *t, int* exit_code)
 {
     /* allocate thw new table */
@@ -198,7 +203,9 @@ void table_ctor(tab_t *t, int* exit_code)
     t->row_c = 0;
     t->length = BUFF_S;
 }
+//endregion
 
+//region ARRAYS WITH CHARS FUNCS
 /**
  *  Adds a character to an array.
  *  If there is no more memory in the array allocate new memory
@@ -250,68 +257,9 @@ void set_add_item(carr_t *set, char *item, int *exit_code)
         CHECK_EXIT_CODE
     }
 }
+//endregion
 
-
-/**
- * Initializes an array of entered separators(DELIM)
- *
- * @param argc Number of commandline arguments
- * @param argv An array with commandline arguments
- * @param exit_code exit code to change if an error occurred
- */
-void init_separators(const int argc, const char **argv, clargs_t *clargs, int *exit_code)
-{
-    //region variables
-    clargs->seps.length = 0;
-    carr_ctor(&clargs->seps, exit_code);
-    CHECK_EXIT_CODE
-    int k = 0;
-    char charchar;
-    //endregion
-
-    /* if there is only name, functions and filename */
-    if(argc >= 3 && strcmp(argv[1], "-d"))
-    {
-        charchar = ' ';
-        a_carr(&clargs->seps, &charchar, exit_code);
-        CHECK_EXIT_CODE
-    }
-
-    /* if user entered -d flag and there are function names and filename in the commandline */
-    else if(argc >= 5 && !strcmp(argv[1], "-d"))
-    {
-        while(argv[2][k])
-        {
-            /* checks if the user has not entered characters that will lead to undefined program behavior */
-            if(argv[2][k] == 10 || argv[2][k] == 92 || argv[2][k] == 34)
-            {
-                *exit_code = W_SEPARATORS_ERROR;
-                return;
-            }
-            charchar = argv[2][k];
-            set_add_item(&(clargs->seps), &charchar, exit_code);
-            CHECK_EXIT_CODE
-            k++;
-        }
-    }
-
-    /* If number of arguments is less than or equal to 2 which means t
-     * here are only name of the program and filename (optional) */
-    else if(argc <= 4)
-    {
-        *exit_code = NUM_ARGUNSUP_ERROR;
-        return;
-    }
-#ifdef SEPSBUG
-    printf("line %d separators -> ", __LINE__);
-    for(int i = 0; i < clargs->seps.elems_c; i++ )
-        printf("%c",clargs->seps.elems_v[i]);
-    putchar(10);
-#endif
-}
-
-//region Trim
-
+//region TRIMS
 /* trims an array of characters */
 void cell_trim(carr_t *arr, int *exit_code)
 {
@@ -389,6 +337,7 @@ void table_trim(tab_t *t, int *exit_code)
 }
 //endregion
 
+//region GET FILE
 /* returns true is newline or eof reached */
 bool get_cell(carr_t *col, clargs_t *clargs, int *exit_code)
 {
@@ -495,6 +444,76 @@ void get_table(const int argc, const char **argv, tab_t *t, clargs_t *clargs, in
         CHECK_EXIT_CODE
     }
 }
+//endregion
+
+//region COMMANDLINE ARGS PARSING
+/**
+ * Initializes an array of entered separators(DELIM)
+ *
+ * @param argc Number of commandline arguments
+ * @param argv An array with commandline arguments
+ * @param exit_code exit code to change if an error occurred
+ */
+void init_separators(const int argc, const char **argv, clargs_t *clargs, int *exit_code)
+{
+    //region variables
+    clargs->seps.length = 0;
+    carr_ctor(&clargs->seps, exit_code);
+    CHECK_EXIT_CODE
+    int k = 0;
+    char charchar;
+    //endregion
+
+    /* if there is only name, functions and filename */
+    if(argc >= 3 && strcmp(argv[1], "-d") != 0)
+    {
+        charchar = ' ';
+        a_carr(&clargs->seps, &charchar, exit_code);
+        CHECK_EXIT_CODE
+    }
+
+        /* if user entered -d flag and there are function names and filename in the commandline */
+    else if(argc >= 5 && !strcmp(argv[1], "-d"))
+    {
+        while(argv[2][k])
+        {
+            /* checks if the user has not entered characters that will lead to undefined program behavior */
+            if(argv[2][k] == 10 || argv[2][k] == 92 || argv[2][k] == 34)
+            {
+                *exit_code = W_SEPARATORS_ERROR;
+                return;
+            }
+            charchar = argv[2][k];
+            set_add_item(&(clargs->seps), &charchar, exit_code);
+            CHECK_EXIT_CODE
+            k++;
+        }
+    }
+
+        /* If number of arguments is less than or equal to 2 which means t
+         * here are only name of the program and filename (optional) */
+    else if(argc <= 4)
+    {
+        *exit_code = NUM_ARGUNSUP_ERROR;
+        return;
+    }
+#ifdef SEPSBUG
+    printf("line %d separators -> ", __LINE__);
+    for(int i = 0; i < clargs->seps.elems_c; i++ )
+        printf("%c",clargs->seps.elems_v[i]);
+    putchar(10);
+#endif
+}
+//endregion
+
+void parse_clargs_proc_tab(const int *argc,const char *(**argv), tab_t *t, clargs_t *clargs, int *exit_code)
+{
+    (void) argc;
+    (void) argv;
+    (void) t;
+    (void) clargs;
+    (void) exit_code;
+}
 
 void process_table(clargs_t *clargs, tab_t *t, int *exit_code)
 {
@@ -542,6 +561,9 @@ int run_program(const int argc, const char **argv)
     /* adds table to the structure */
     get_table(argc, argv, &t, &clargs, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
+
+    /* parse commandline arguments and process table for them */
+    parse_clargs_proc_tab(&argc, &argv, &t, &clargs, &exit_code);
 
     print_tab(&t, &clargs.seps);
 
