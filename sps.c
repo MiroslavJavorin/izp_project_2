@@ -6,6 +6,10 @@
 
 // TODO в случае проблемы расширь таблицу
 
+/* TODO make possible toquote a quotation mark if neccessarry
+ *  change get_row(), delete get_cell()
+ * */
+
 //region includes
 #include <stdio.h>
 #include <string.h>
@@ -76,6 +80,7 @@ typedef struct
 {
     carr_t seps;
     FILE  *ptr;
+    bool defaultsep; /* means user hasnt entered any separator and ' ' is used as a searator */
 } clargs_t;
 
 /* contains information about a row */
@@ -214,7 +219,7 @@ void table_ctor(tab_t *t, int* exit_code)
  * @param item       an item to add to an array
  * @param exit_code  can be changed if array reallocated unsuccesfully
  */
-void a_carr(carr_t *arr, char *item, int *exit_code)
+void a_carr(carr_t *arr,const char *item, int *exit_code)
 {
     /* if there is no more space for the new element add new space */
     if(arr->elems_c + 1 >= arr->length )
@@ -228,7 +233,7 @@ void a_carr(carr_t *arr, char *item, int *exit_code)
 }
 
 /* returns true if given set contains the item*/
-bool set_contains(carr_t *set, char *item)
+bool set_contains(carr_t *set, const char *item)
 {
     for(int i = 0; i < set->elems_c; i++)
         if(set->elems_v[i] == *item)
@@ -405,10 +410,10 @@ void get_row(row_t *row, clargs_t *clargs, int *exit_code)
     }
 }
 
-void get_table(const int argc, const char **argv, tab_t *t, clargs_t *clargs, int *exit_code)
+void get_table(const int *argc, const char **argv, tab_t *t, clargs_t *clargs, int *exit_code)
 {
     //TODO check if file is not empty
-    if((clargs->ptr = fopen(argv[argc - 1], "r+")) == NULL)
+    if((clargs->ptr = fopen(argv[*argc - 1], "r+")) == NULL)
     {
         *exit_code = NO_SUCH_FILE_ERROR;
         return;
@@ -454,7 +459,7 @@ void get_table(const int argc, const char **argv, tab_t *t, clargs_t *clargs, in
  * @param argv An array with commandline arguments
  * @param exit_code exit code to change if an error occurred
  */
-void init_separators(const int argc, const char **argv, clargs_t *clargs, int *exit_code)
+void init_separators(const int *argc, const char **argv, clargs_t *clargs, int *exit_code)
 {
     //region variables
     clargs->seps.length = 0;
@@ -465,16 +470,18 @@ void init_separators(const int argc, const char **argv, clargs_t *clargs, int *e
     //endregion
 
     /* if there is only name, functions and filename */
-    if(argc >= 3 && strcmp(argv[1], "-d") != 0)
+    if(*argc >= 3 && strcmp(argv[1], "-d") != 0)
     {
         charchar = ' ';
         a_carr(&clargs->seps, &charchar, exit_code);
+        clargs->defaultsep = true;
         CHECK_EXIT_CODE
     }
 
         /* if user entered -d flag and there are function names and filename in the commandline */
-    else if(argc >= 5 && !strcmp(argv[1], "-d"))
+    else if(*argc >= 5 && !strcmp(argv[1], "-d"))
     {
+        clargs->defaultsep = false;
         while(argv[2][k])
         {
             /* checks if the user has not entered characters that will lead to undefined program behavior */
@@ -492,7 +499,7 @@ void init_separators(const int argc, const char **argv, clargs_t *clargs, int *e
 
         /* If number of arguments is less than or equal to 2 which means t
          * here are only name of the program and filename (optional) */
-    else if(argc <= 4)
+    else if(*argc <= 4)
     {
         *exit_code = NUM_ARGUNSUP_ERROR;
         return;
@@ -506,13 +513,40 @@ void init_separators(const int argc, const char **argv, clargs_t *clargs, int *e
 }
 //endregion
 
-void parse_clargs_proc_tab(const int *argc,const char *(**argv), tab_t *t, clargs_t *clargs, int *exit_code)
+void parse_clargs_proc_tab(const int *argc, const char **argv, tab_t *t, clargs_t *clargs, int *exit_code)
 {
     (void) argc;
     (void) argv;
     (void) t;
     (void) clargs;
     (void) exit_code;
+    /* by default has value 1, which means there was no delim in the command line */
+    int clarg = 1;
+    /*
+     * TODO
+        2 - for each element parse an array and
+            1 - change the selsction
+            2 - call a function
+    */
+
+    /* go through all commandline arguments */
+    if(!clargs->defaultsep)
+    {
+        clarg = 3; /* 3 is a position of argument after delim */
+    }
+    if(clarg == *argc - 1)
+    {
+        *exit_code = NUM_ARGUNSUP_ERROR;
+        return;
+    }
+    for( ; clarg < *argc - 1; clarg++)
+    {
+        /* TODO добавляешь то, что идет до ; или до конца аргумента, в строку
+         *  потом идешь ее парсить(в оптдельныю функцию!!!!)
+         *   из отдельной функции, в зависимости от условий, вызываешь редакторивание таблицы
+        */
+    }
+    CHECK_EXIT_CODE
 }
 
 void process_table(clargs_t *clargs, tab_t *t, int *exit_code)
@@ -555,15 +589,16 @@ int run_program(const int argc, const char **argv)
     //endregion
 
     /* initialize separators from commandline */
-    init_separators(argc, argv, &clargs, &exit_code);
+    init_separators(&argc, argv, &clargs, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
     /* adds table to the structure */
-    get_table(argc, argv, &t, &clargs, &exit_code);
+    get_table(&argc, argv, &t, &clargs, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
     /* parse commandline arguments and process table for them */
-    parse_clargs_proc_tab(&argc, &argv, &t, &clargs, &exit_code);
+    parse_clargs_proc_tab(&argc, argv, &t, &clargs, &exit_code);
+    CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
     print_tab(&t, &clargs.seps);
 
