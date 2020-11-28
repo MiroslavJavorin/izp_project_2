@@ -37,7 +37,7 @@ int error_line_global = 0;
 /* checks exit code in a void function */
 #define CHECK_EXIT_CODE if(*exit_code > 0){ printf("(%d) err\n",__LINE__);error_line_global = __LINE__;return; }
 
-/* checking for an alloc error FIXME опасно, поменяй на функцию */
+/* checking for an alloc error FIXME опаасно, поменяй на функцию */
 #define CHECK_ALLOC_ERR(arr) if(arr == NULL)\
 {\
     *exit_code = W_ALLOCATING_ERROR;\
@@ -51,7 +51,7 @@ int error_line_global = 0;
 
 #define NEG(n) ( n = !n ); /* negation of bool value */
 
-#define FREE(arr) if(arr) { free(arr); } /* check if a is not NULL */
+#define FREE(arr) if(arr != NULL) { free(arr); } /* check if a is not NULL */
 //endregion
 
 //region enums
@@ -97,9 +97,16 @@ typedef enum
     DROW,
     ICOL,
     ACOL,
-    DCOL
+    DCOL,
+    SEL
     //  TODO дополнить
 } cmdopt;
+
+typedef enum
+{
+    NCOLS,
+    WCOLS
+} rtrimopt;
 //endregion
 
 //region structures
@@ -198,7 +205,7 @@ bool lessthan(int n1, int n2)
 
 //region FREE MEM
 /* frees all memory allocated by a table_t structure s */
-void free_table(tab_t *t)
+void free_table1(tab_t *t)
 {
 
 #ifdef SHOWTAB
@@ -227,11 +234,42 @@ void free_table(tab_t *t)
 #endif
 }
 
+/* frees all memory allocated by a table_t structure s */
+void free_table(tab_t *t)
+{
+
+#ifdef SHOWTAB
+    printf("line %d FREE TABLE Table :len %d ?= rows %d\n", __LINE__, t->length, t->row_c);
+#endif
+    for(int row = t->length - 1; row >= 0; row--)
+    {
+#ifdef SHOWTAB
+        printf("row %d with cols,| len = %d ?= colc %d\n", row, t->rows_v[row].length, t->rows_v[row].cols_c);
+#endif
+        for(int col = t->col_c - 1; col >= 0; col--) // FIXME (1) + 1
+        {
+#ifdef SHOWTAB
+            printf(" %d", col);
+#endif
+            FREE(t->rows_v[row].cols_v[col].elems_v)
+        }
+        FREE(t->rows_v[row].cols_v)
+#ifdef SHOWTAB
+        printf(" freed\n");
+#endif
+    }
+    FREE(t->rows_v)
+#ifdef SHOWTAB
+    printf("table freed\n");
+#endif
+}
+
 /* frees all memory allocated by a clargs_t structure s */
 void free_clargs(clargs_t *s)
 {
-    if(s->seps.elems_v)
-        FREE(s->seps.elems_v)
+
+    FREE(s->seps.elems_v)
+
     if(s->ptr)
         fclose(s->ptr);
 }
@@ -257,7 +295,7 @@ void carr_ctor(carr_t *arr, int size, int *exit_code)
 }
 
 /* allocating a row of size siz */
-void row_ctor(row_t *r,int size, int *exit_code)
+void row_ctor(row_t *r, int size, int *exit_code)
 {
     r->cols_v = (carr_t*)malloc(size * sizeof(carr_t));
     CHECK_ALLOC_ERR(r->cols_v)
@@ -376,6 +414,7 @@ void a_carr(carr_t *arr,const char item, int *exit_code)
     }
     arr->isempty = false;
     arr->elems_v[arr->elems_c++] = item;
+    arr->elems_v[arr->elems_c]   = 0; /* add terminating 0 */
 
 }
 
@@ -496,33 +535,23 @@ void cell_trim(carr_t *arr, int *exit_code)
         printf("(%d)\t\t\tlen %d elems %d\n", __LINE__, arr->length, arr->elems_c); // FIXME what the fuck
 #endif
         /* reallocate for elements and terminating 0 */
-        if(!arr->elems_c)
-            arr->elems_v = (char *)realloc(arr->elems_v, (arr->elems_c + 1) * sizeof(char));
-        else
-            arr->elems_v = (char *)realloc(arr->elems_v, arr->elems_c * sizeof(char));
-
+        arr->elems_v = (char *)realloc(arr->elems_v, (arr->elems_c + 1) * sizeof(char));
         CHECK_ALLOC_ERR(arr->elems_v)
 
-        arr->length = (arr->elems_c) ? arr->elems_c : 1;
+        arr->length = (arr->elems_c) ? arr->elems_c + 1 : 1; // FIXME valgriind throw out + 1
     }
 }
 
-typedef enum
-{
-    NCOLS,
-    WCOLS
-} rtrimopt;
-
-void row_trim(row_t *row,int siz , int *exit_code, rtrimopt opt)
+void row_trim(row_t *row, int siz, int *exit_code, rtrimopt opt)
 {
     /* trim all cells in the row */
 #ifdef SHOWTAB
     printf("(%d) cols -> %d  len -> %d . \n", __LINE__, row->cols_c, row->length );
 #endif
 
-    if(row->length > siz)
+    if(row->length >= siz)
     {
-        for(int i = row->length - 1; i > siz; i--)
+        for(int i = row->length - 1; i >= siz; i--)
         {
             FREE(row->cols_v[i].elems_v)
         }
@@ -537,7 +566,7 @@ void row_trim(row_t *row,int siz , int *exit_code, rtrimopt opt)
         row->cols_v = (carr_t *)realloc(row->cols_v, siz * sizeof(carr_t));
         CHECK_ALLOC_ERR(row->cols_v)
 
-        for(int c = row->cols_c; c < siz; c++)
+        for(int c = row->cols_c + 1; c < siz; c++)
         {
             carr_ctor(&row->cols_v[c], MEMBLOCK, exit_code);
             CHECK_EXIT_CODE
@@ -614,7 +643,7 @@ void table_trim(tab_t *t, int *exit_code)
 #ifdef SHOWTAB
         printf("\n(%d) untrim row %d has len %d\n", __LINE__,row, t->rows_v[row].length);
 #endif
-        row_trim(&t->rows_v[row], t->rows_v[row].cols_c + 1, exit_code, WCOLS);
+        row_trim(&t->rows_v[row], t->rows_v[row].cols_c + 1, exit_code, WCOLS); //FIXME
         CHECK_EXIT_CODE
 
         if(!row || maxlen < t->rows_v[row].cols_c) // find max number of cells
@@ -629,18 +658,18 @@ void table_trim(tab_t *t, int *exit_code)
 #ifdef SHOWTAB
     printf("\n(%d)t->row_c = %d \n\n",__LINE__, t->row_c);
 #endif
-    for(int r = 0; r < t->row_c; r++) //FIXME cols - 1
+    for(int r = t->row_c - 1; r >= 0; r--) //FIXME cols - 1
     {
 #ifdef SHOWTAB
-        printf("(%d) maxlen %d untrim row %d has len %d\n", __LINE__, maxlen, row, t->rows_v[r].length);
+        printf("(%d) maxlen %d untrim row %d has len %d\n", __LINE__, maxlen, r, t->rows_v[r].length);
 #endif
         row_trim(&t->rows_v[r], maxlen, exit_code, NCOLS);
 #ifdef SHOWTAB
-        printf("(%d)     maxlen %d trim row %d has len %d\n", __LINE__, maxlen, row, t->rows_v[r].length);
+        printf("(%d)     maxlen %d trim row %d has len %d\n", __LINE__, maxlen, r, t->rows_v[r].length);
 #endif
     }
-    t->col_c = maxlen - 1;
 
+    t->col_c = maxlen; //FIXME (1) -1
 }
 //endregion
 
@@ -747,8 +776,8 @@ void getmcol(tab_t *t, clargs_t *clargs, int *exit_code)
 /* returns true is newline or eof reached */
 void get_nums(carr_t *command, clargs_t *clargs, int *exit_code) // TODO поменять иусловия для cursel
 {
-    char *token;
-    char *ptr;
+    char *token = NULL;
+    char *ptr   = NULL;
     int nums[4] = {0};
     int i       = 0;
     bool uscore = false;
@@ -785,6 +814,8 @@ void get_nums(carr_t *command, clargs_t *clargs, int *exit_code) // TODO пом�
         }
         token = strtok(NULL, ",");
     }
+    FREE(token)
+    //FREE(ptr)
 
     if((i == 3 && (nums[0] == MAXVAL || nums[2] == MAXVAL || uscore)) || (i == 1 && dash))
     {
@@ -924,6 +955,10 @@ void get_table(const int *argc, const char **argv, tab_t *t, clargs_t *clargs, i
 //region TABLE PROCESSING
 void process_table(clargs_t *clargs, tab_t *t, int *exit_code)
 {
+#ifdef CMDS
+    printf("(%d)opt %d for cmd_c %d\n\n ", clargs->cmds[clargs->cmds_c].opt, clargs->cmds_c);
+#endif
+
 
     switch(clargs->cmds[clargs->cmds_c].opt)
     {
@@ -942,6 +977,9 @@ void process_table(clargs_t *clargs, tab_t *t, int *exit_code)
         case ICOL:  {break;}//TODO
         case ACOL:  {break;}//TODO
         case DCOL:  {break;}//TODO
+        case NONE:  {break;}//TODO
+        case SEL:   {break;}//TODO
+        default:    {break;}//TODO напицвать в начале всего NONE  и если не изменилось, вернуть ошибку
     }
 }
 //endregion
@@ -1006,7 +1044,7 @@ void cng_sel_tab_ed(carr_t *command, clargs_t *clargs, int *exit_code)
     }
 
         /* if there's a selection command sets a new current selection */
-    else {get_nums(command, clargs, exit_code);}
+    else {clargs->cmds[clargs->cmds_c].opt = SEL;get_nums(command, clargs, exit_code);}
 
     CHECK_EXIT_CODE
     FREE(currcom)
@@ -1056,7 +1094,7 @@ void init_cmd(carr_t *dst, const char *arg, clargs_t *clargs, tab_t *t, int *exi
 
             /* edit structure of the table or change current selection */
             if(strchr(dst->elems_v, ' ') == NULL)
-            { cng_sel_tab_ed(dst, clargs, exit_code);}
+            {cng_sel_tab_ed(dst, clargs, exit_code);}
             
             /* init and call data processing functions or process temp variables */
             else
@@ -1070,7 +1108,9 @@ void init_cmd(carr_t *dst, const char *arg, clargs_t *clargs, tab_t *t, int *exi
             process_table(clargs, t, exit_code);
             CHECK_EXIT_CODE
 
-            clargs->cmds_c++; /* move to the next command */
+            /* move to the next command */
+            if(p != arglen -1)
+            {   clargs->cmds_c++;}
             dst->elems_c = 0; // TODO make a function for it
             dst->isempty = true;
             memset(dst->elems_v, 0, dst->elems_c); // fill an array with 0s
@@ -1213,6 +1253,10 @@ int run_program(const int argc, const char **argv)
 
     /* parse commandline arguments and process table for them */
     parse_clargs_proc_tab(&argc, argv, &t, &clargs, &exit_code);
+    CHECK_EXIT_CODE_IN_RUN_PROGRAM
+
+    /* trim table before printing */ // TODO добавить арг final, который значит, что надо все подровнять
+    table_trim;
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
     print_tab(&t, &clargs.seps, clargs.ptr);
