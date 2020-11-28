@@ -40,12 +40,13 @@ int error_line_global = 0;
 /* checking for an alloc error FIXME опаасно, поменяй на функцию */
 #define CHECK_ALLOC_ERR(arr) if(arr == NULL)\
 {\
-    *exit_code = W_ALLOCATING_ERROR;\
+    *exit_code = W_ALLOCATING_ERR;\
     CHECK_EXIT_CODE\
 }
 
 #define MEMBLOCK     10 /* allocation step */
 #define MAXVAL      -42
+#define ALLVALS     -13
 #define PTRNLEN      1001
 #define NOF_TMP_SELS 10 /* max number of temo selections */
 
@@ -55,16 +56,23 @@ int error_line_global = 0;
 //endregion
 
 //region enums
+typedef enum
+{
+    NCOLS,
+    WCOLS
+} rtrim_opt; /* row trim option for trimming function */
 
 enum erorrs
 {
-    W_ALLOCATING_ERROR = 1, /* error caused by a 'memory' function */
-    W_SEPARATORS_ERROR,     /* wrong separators have been entered*/
-    NUM_UNSUPARG_ERROR,     /* unsupported number of arguments */
-    VAL_UNSUPCMD_ERROR,     /* wrong arguments in the commandline */
-    NO_SUCH_FILE_ERROR,     /* no file with the entered name exists */
-    LEN_UNSUPCMD_ERROR,     /* unsupported length of the command */
-    Q_DONT_MATCH_ERROR      /* quotes dont match */
+    W_ALLOCATING_ERR = 1, /* error caused by a 'memory' function */
+    
+    W_SEPARATORS_ERR,     /* wrong separators have been entered  */
+    NUM_UNSUPARG_ERR,     /* unsupported number of arguments     */
+//    VAL_UNSUPCMD_ERR,     /* wrong arguments in the cmdline  */
+    NUM_UNRECARF_ERR,     /* unrecognized argument               */
+    NO_SUCH_FILE_ERR,     /* no file with the entered name exists */
+    LEN_UNSUPCMD_ERR,     /* unsupported length of the cmd   */
+    Q_DONT_MATCH_ERR      /* quotes dont match                   */
 };
 
 enum argpos
@@ -77,36 +85,25 @@ enum argpos
 
 typedef enum
 {
-    WHOLETAB,
-} select_opt;
-
-typedef enum
-{
-    NONE,
-    /* set cursel to the 1-st column contains the given pattern */
-    FIND,
-    /* set curset to the column contains numberical value in the current cursel */
-    MIN,
-    MAX,
-
-    /* clear all columns in cursel */
-    CLEAR,
-
-    IROW,
-    AROW,
-    DROW,
-    ICOL,
-    ACOL,
-    DCOL,
-    SEL
+    FIND, MIN, MAX, CLEAR,
+    IROW, AROW, DROW, ICOL, ACOL, DCOL
     //  TODO дополнить
-} cmdopt;
+} proc_opt_t;
 
 typedef enum
 {
-    NCOLS,
-    WCOLS
-} rtrimopt;
+    WHOLE, /* select the whole table                               */
+    CELL,  /* select only one cell                                 */
+    CELLS, /* select a window(row, col, or a set of rows and cols) */
+    TMP,
+} sel_opt_t;
+
+typedef enum
+{
+    NOPT,
+    SEL,
+    PRC,
+} cmd_opt_t;
 //endregion
 
 //region structures
@@ -125,12 +122,15 @@ typedef struct
 {
     /* upper row, left column, lower row, right column */
     int row_1, col_1, row_2, col_2;
-    cmdopt opt;
-    char pttrn[PTRNLEN];   /* if there's a pattern in the command */
-    bool issel;
+    cmd_opt_t   cmd_opt; /* defines processing option or selection option */
+
+    sel_opt_t   sel_opt;
+    proc_opt_t  proc_opt;
+    char        pttrn[PTRNLEN];   /* if there's a pattern in the cmd */
+    bool        issel;
 }cmd_t;
 
-/* contains information about arguments user entered in commandline */
+/* contains information about arguments user entered in cmdline */
 typedef struct
 {
     carr_t seps;
@@ -138,10 +138,10 @@ typedef struct
     FILE *ptr;
 
     /* arguments themselfs */
-    cmd_t cmds[1001]; /* array with all commands(for functions goto etc) */
+    cmd_t cmds[1001]; /* array with all cmds(for functions goto etc) */
     int currsel;      /* index of the current selectinon */
     int cellsel;      /* index of the current cell seleciton */
-    int cmds_c;       /* number of entered commands. Represents a position of a current command */
+    int cmds_c;       /* number of entered cmds. Represents a position of a current cmd */
 
     int tmpsel[NOF_TMP_SELS]; /* array with ppositions of temp selections */
 } clargs_t;
@@ -202,6 +202,37 @@ bool lessthan(int n1, int n2)
     }
     else return (bool)(n1 < n2);
 }
+
+//region functions
+
+//
+void clear_f(clargs_t *clargs, tab_t *t, int *exit_code)
+{}
+
+
+void irow_f(clargs_t *clargs, tab_t *t, int *exit_code)
+{}
+
+
+void arow_f(clargs_t *clargs, tab_t *t, int *exit_code)
+{}
+
+
+void drow_f(clargs_t *clargs, tab_t *t, int *exit_code)
+{}
+
+
+void icol_f(clargs_t *clargs, tab_t *t, int *exit_code)
+{}
+
+
+void acol_f(clargs_t *clargs, tab_t *t, int *exit_code)
+{}
+
+
+void dcol_f(clargs_t *clargs, tab_t *t, int* exit_code)
+{}
+//endregion
 
 //region FREE MEM
 /* frees all memory allocated by a table_t structure s */
@@ -341,28 +372,28 @@ void iscellnum(carr_t *cell)
 }
 
 /**
- * Copies string src to string string dst
+ * Copies string src to string string cmd
  *
  * @param array of chars to copy to
  * @param array of chars to copy from
- * @return false If len of dst < len of src
+ * @return false If len of cmd < len of src
  *         true if copied succesfully
  */
-bool strcop(char* dst, char* src)
+bool strcop(char* cmd, char* src)
 {
-    int dstlen = (int)strlen(dst);
-    if(dstlen < (int)strlen(src))
+    int cmdlen = (int)strlen(cmd);
+    if(cmdlen < (int)strlen(src))
     {
 #ifdef CMDS
-    printf("(%d) dst_len(%d) != srclen(%d) for dst=\"%s\",  src=\"%s\"\n",__LINE__, dstlen, (int)strlen(src),dst, src );
+    printf("(%d) cmd_len(%d) != srclen(%d) for cmd=\"%s\",  src=\"%s\"\n",__LINE__, cmdlen, (int)strlen(src),cmd, src );
 #endif
         return false;
     }
 
     int i = 0;
-    while(i < dstlen)
+    while(i < cmdlen)
     {
-        dst[i] = src[i];
+        cmd[i] = src[i];
         i++;
     }
     return true;
@@ -486,7 +517,7 @@ void expand_tab(clargs_t *clargs, tab_t *t, int *exit_code)
         t->rows_v = (row_t*)realloc(t->rows_v, t->length * sizeof(row_t));
         CHECK_ALLOC_ERR(t->rows_v)
 
-        //TODO add MAXVAL
+
         /* allocate new memory for columns */
         int siz = (clargs->cmds[sel_pos].col_2 == MAXVAL) ? t->col_c : clargs->cmds[sel_pos].col_2;
 
@@ -542,7 +573,7 @@ void cell_trim(carr_t *arr, int *exit_code)
     }
 }
 
-void row_trim(row_t *row, int siz, int *exit_code, rtrimopt opt)
+void row_trim(row_t *row, int siz, int *exit_code, rtrim_opt opt)
 {
     /* trim all cells in the row */
 #ifdef SHOWTAB
@@ -690,7 +721,7 @@ void set_cursel(clargs_t *clargs, int row1, int col1, int row2, int col2, int *e
         lessthan(row2, clargs->cmds[clargs->cellsel].row_2) ||
         lessthan(col2, clargs->cmds[clargs->cellsel].col_2))
     {
-        *exit_code = VAL_UNSUPCMD_ERROR;
+        *exit_code = W_SEPARATORS_ERR;
         CHECK_EXIT_CODE
     }
 
@@ -746,7 +777,7 @@ void getmcol(tab_t *t, clargs_t *clargs, int *exit_code)
                     printf("(%d)    m_val %lf m_row = %d m_col = %d\n", __LINE__, m_val, m_row, m_col);
 #endif
                 }
-                else if(clargs->cmds[clargs->currsel].opt == MIN && tmp_val < m_val)
+                else if(clargs->cmds[clargs->currsel].cmd_opt == MIN && tmp_val < m_val)
                 {
 #ifdef SELECT
                     printf("(%d)        min m_val %lf m_row = %d m_col = %d\n", __LINE__, m_val, m_row, m_col);
@@ -754,7 +785,7 @@ void getmcol(tab_t *t, clargs_t *clargs, int *exit_code)
                     m_val = tmp_val;
                     m_row = row_fr, m_col = col_fr;
                 }
-                else if(clargs->cmds[clargs->currsel].opt && tmp_val > m_val)
+                else if(clargs->cmds[clargs->currsel].cmd_opt == MAX && tmp_val > m_val)
                 {
 #ifdef SELECT
                     printf("(%d)        max m_val %lf m_row = %d m_col = %d\n", __LINE__, m_val, m_row, m_col);
@@ -774,7 +805,7 @@ void getmcol(tab_t *t, clargs_t *clargs, int *exit_code)
 }
 
 /* returns true is newline or eof reached */
-void get_nums(carr_t *command, clargs_t *clargs, int *exit_code) // TODO поменять иусловия для cursel
+void get_nums(carr_t *cmd, clargs_t *clargs, int *exit_code) // TODO поменять иусловия для cursel
 {
     char *token = NULL;
     char *ptr   = NULL;
@@ -782,12 +813,13 @@ void get_nums(carr_t *command, clargs_t *clargs, int *exit_code) // TODO пом�
     int i       = 0;
     bool uscore = false;
     bool dash   = false;
+    clargs->cmds[clargs->cmds_c].cmd_opt = SEL;
 
 #ifdef SELECT
-    printf("(%d) command = \"%s\"\n", __LINE__, command->elems_v);
+    printf("(%d) cmd = \"%s\"\n", __LINE__, cmd->elems_v);
 #endif
     /* get the first token */
-    token = strtok(command->elems_v, ",");
+    token = strtok(cmd->elems_v, ",");
 
     /* walk through other tokens */
     for(; i < 4 && token != NULL; i++)
@@ -807,23 +839,42 @@ void get_nums(carr_t *command, clargs_t *clargs, int *exit_code) // TODO пом�
             }
             else
             {
-                *exit_code = VAL_UNSUPCMD_ERROR;
+                *exit_code = W_SEPARATORS_ERR;
                 CHECK_EXIT_CODE
             }
             nums[i] = MAXVAL;
         }
         token = strtok(NULL, ",");
     }
-    FREE(token)
-    //FREE(ptr)
+    FREE(token) // FIXME check if there is a need to call this function
 
     if((i == 3 && (nums[0] == MAXVAL || nums[2] == MAXVAL || uscore)) || (i == 1 && dash))
     {
-        *exit_code = VAL_UNSUPCMD_ERROR;
+        *exit_code = W_SEPARATORS_ERR;
         CHECK_EXIT_CODE
     }
-    if(i == 1) /* if there is a command of type [r,c] */
+    if(i == 1) /* if there is a cmd of type [r,c] */
     {
+        for(int k = 0; k <= i; k++)
+        {
+            if(nums[k] == MAXVAL)
+            {
+                nums[k] = ALLVALS; /* means all rows or all columns */
+            }
+        }
+#ifdef SELECT
+        printf("\n(%d) ",__LINE__);
+        if(nums[0] == ALLVALS)
+        {
+            printf("-all rows-");
+        } else printf("-row %d-", nums[0]);
+        if(nums[1] == ALLVALS)
+        {
+            printf("-all cols-");
+        } else printf("-col %d-", nums[1]);
+        printf("\n");
+#endif
+
         /* it can be done with for cycle, but there's no need to use it */
         nums[2] = nums[0];
         nums[3] = nums[1];
@@ -831,8 +882,12 @@ void get_nums(carr_t *command, clargs_t *clargs, int *exit_code) // TODO пом�
         /* the current coll selection becomes the position of the current argument */
         if(!uscore)
         {
+            clargs->cmds[clargs->cmds_c].sel_opt = CELL;
             clargs->cellsel =  clargs->cmds_c;
         }
+    }else if(i == 3)
+    {
+        clargs->cmds[clargs->cmds_c].sel_opt = CELLS;
     }
 #ifdef SELECT
     printf("(%d) extracted selection: [%d,%d,%d,%d]\n",__LINE__, nums[0], nums[1], nums[2], nums[3]);
@@ -852,7 +907,7 @@ bool get_cell(carr_t *col, clargs_t *clargs, int *exit_code)
         buff_c = (char)fgetc(clargs->ptr);
         if(buff_c == '\n' || feof(clargs->ptr))
         {
-            if(quoted) *exit_code = Q_DONT_MATCH_ERROR;
+            if(quoted) *exit_code = Q_DONT_MATCH_ERR;
 #ifdef SHOWTAB
             printf("(%d)  \t\t\t%s\n", __LINE__, col->elems_v);
 #endif
@@ -917,7 +972,7 @@ void get_table(const int *argc, const char **argv, tab_t *t, clargs_t *clargs, i
     //TODO check if file is not empty
     if((clargs->ptr = fopen(argv[*argc - 1], "r+")) == NULL)
     {
-        *exit_code = NO_SUCH_FILE_ERROR;
+        *exit_code = NO_SUCH_FILE_ERR;
         return;
     }
 
@@ -956,13 +1011,13 @@ void get_table(const int *argc, const char **argv, tab_t *t, clargs_t *clargs, i
 void process_table(clargs_t *clargs, tab_t *t, int *exit_code)
 {
 #ifdef CMDS
-    printf("(%d)opt %d for cmd_c %d\n\n ", clargs->cmds[clargs->cmds_c].opt, clargs->cmds_c);
+    printf("(%d)opt %d for cmd_c %d\n\n ", clargs->cmds[clargs->cmds_c].cmd_opt, clargs->cmds_c);
 #endif
 
 
-    switch(clargs->cmds[clargs->cmds_c].opt)
+    switch(clargs->cmds[clargs->cmds_c].proc_opt)
     {
-        case FIND: {break;}// TODO
+        case FIND: { /* find_f(clargs, t, exit_code); */ break;}// TODO
 
         /* set column in range of the selection by numerical value */
         case MIN:{ getmcol(t, clargs, exit_code); break; }
@@ -970,156 +1025,220 @@ void process_table(clargs_t *clargs, tab_t *t, int *exit_code)
         /* set column in range of the selection by numerical value */
         case MAX:{ getmcol(t, clargs, exit_code); break; }
 
-        case CLEAR: {break;}//TODO
-        case IROW:  {break;}//TODO
-        case AROW:  {break;}//TODO
-        case DROW:  {break;}//TODO
-        case ICOL:  {break;}//TODO
-        case ACOL:  {break;}//TODO
-        case DCOL:  {break;}//TODO
-        case NONE:  {break;}//TODO
-        case SEL:   {break;}//TODO
-        default:    {break;}//TODO напицвать в начале всего NONE  и если не изменилось, вернуть ошибку
+        case CLEAR: { clear_f(clargs, t, exit_code);  break;}//TODO
+        case IROW:  { irow_f(clargs, t, exit_code);  break;} //TODO
+        case AROW:  { arow_f(clargs, t, exit_code);  break;} //TODO
+        case DROW:  { drow_f(clargs, t, exit_code);  break;} //TODO
+        case ICOL:  { icol_f(clargs, t, exit_code);  break;} //TODO
+        case ACOL:  { acol_f(clargs, t, exit_code);  break;} //TODO
+        case DCOL:  { dcol_f(clargs, t, exit_code);  break;} //TODO
+        default:    {break;}
     }
 }
 //endregion
 
-//region COMMANDLINE ARGS PARSING
+//region cmdLINE ARGS PARSING
 
-void daporc_tmp_vars(carr_t *command, clargs_t *clargs, tab_t *t, int *exit_code)
+/**
+ *
+ * @param cmd
+ * @param clargs
+ * @param t
+ * @param exit_code
+ */
+void init_wspased_cmd(carr_t *cmd, clargs_t *clargs, tab_t *t, int *exit_code)
 {
-    (void)command;
-    (void)clargs;
-    (void)t;
-    (void)exit_code;
 
-    if(strbstr(command->elems_v, "[find "))
+    return;
+    if(strbstr(cmd->elems_v, "[find "))
     {
-        clargs->cmds[clargs->cmds_c].opt = FIND;
 
-        /* if command is FIND and a pattern is too long */
-        if(!strcop(clargs->cmds[clargs->cmds_c].pttrn, command->elems_v))
+        /* if cmd is FIND and a pattern is too long */
+        if(!strcop(clargs->cmds[clargs->cmds_c].pttrn, cmd->elems_v))
         {
-            *exit_code = LEN_UNSUPCMD_ERROR;
+            *exit_code = LEN_UNSUPCMD_ERR;
             error_line_global = __LINE__;
         }
 #ifdef SELECT
-        printf("(%d) command find, pattern \"%s\"\n", __LINE__, clargs->cmds[clargs->cmds_c].pttrn );
+        printf("(%d) cmd find, pattern \"%s\"\n", __LINE__, clargs->cmds[clargs->cmds_c].pttrn );
 #endif
         return;
     }
 }
 
 /**
- *  Initialize a command from argument
- *  If the given command is a selection,
+ *  Initialize a cmd from argument
+ *  If the given cmd is a selection,
  *   then change the current selection to the new given selection
- * @param command an array with a command
- * @param clargs structure with commandline aruments, including an array
- *        with commands and current selection
+ * @param cmd an array with a cmd
+ * @param clargs structure with cmdline aruments, including an array
+ *        with cmds and current selection
  * @param t structure with a table to call table editing functions
  * @param exit_code
  */
-void cng_sel_tab_ed(carr_t *command, clargs_t *clargs, int *exit_code)
+void init_n_wspased_cmd(carr_t *cmd, clargs_t *clargs, int *exit_code)
 {
     /* number of occurances */
-    char *currcom = calloc(command->elems_c, sizeof(char));
+    char *currcom = calloc(cmd->elems_c, sizeof(char));
     CHECK_ALLOC_ERR(currcom)
 
-    if     (!strcmp(command->elems_v, "irow" )) { clargs->cmds[clargs->cmds_c].opt= IROW;  }
-    else if(!strcmp(command->elems_v, "arow" )) { clargs->cmds[clargs->cmds_c].opt = AROW; }
-    else if(!strcmp(command->elems_v, "drow" )) { clargs->cmds[clargs->cmds_c].opt = DROW; }
-    else if(!strcmp(command->elems_v, "icol ")) { clargs->cmds[clargs->cmds_c].opt = ICOL; }
-    else if(!strcmp(command->elems_v, "acol ")) { clargs->cmds[clargs->cmds_c].opt = ACOL; }
-    else if(!strcmp(command->elems_v, "dcol" )) { clargs->cmds[clargs->cmds_c].opt = DCOL; }
-    else if(!strcmp(command->elems_v, "clear")) { clargs->cmds[clargs->cmds_c].opt = CLEAR;}
-    else if(!strcmp(command->elems_v, "min"  )) { clargs->cmds[clargs->cmds_c].opt = MIN;  }
-    else if(!strcmp(command->elems_v, "max"  )) { clargs->cmds[clargs->cmds_c].opt = MAX;  }
 
-    else if(!strcmp(command->elems_v, "_"    )) { printf("%d _", __LINE__);} // TODO refresh selection from temp var
-    else if(!strcmp(command->elems_v, "_,_"))
+    if     (!strcmp(cmd->elems_v, "irow" )) { clargs->cmds[clargs->cmds_c].proc_opt = IROW; }
+    else if(!strcmp(cmd->elems_v, "arow" )) { clargs->cmds[clargs->cmds_c].proc_opt = AROW; }
+    else if(!strcmp(cmd->elems_v, "drow" )) { clargs->cmds[clargs->cmds_c].proc_opt = DROW; }
+    else if(!strcmp(cmd->elems_v, "icol ")) { clargs->cmds[clargs->cmds_c].proc_opt = ICOL; }
+    else if(!strcmp(cmd->elems_v, "acol ")) { clargs->cmds[clargs->cmds_c].proc_opt = ACOL; }
+    else if(!strcmp(cmd->elems_v, "dcol" )) { clargs->cmds[clargs->cmds_c].proc_opt = DCOL; }
+    else if(!strcmp(cmd->elems_v, "clear")) { clargs->cmds[clargs->cmds_c].proc_opt = CLEAR;}
+    else if(!strcmp(cmd->elems_v, "min"  )) { clargs->cmds[clargs->cmds_c].proc_opt = MIN;  }
+    else if(!strcmp(cmd->elems_v, "max"  )) { clargs->cmds[clargs->cmds_c].proc_opt = MAX;  }
+    else if(!strcmp(cmd->elems_v, "set"  )) { clargs->cmds[clargs->cmds_c].proc_opt = SET;  }// TODO разберись в set
+    else if(!strcmp(cmd->elems_v, "_"    )) // TODO обновит выбор с временной переменной
     {
-        clargs->cmds[clargs->cmds_c].opt = WHOLETAB; // TODO придумай ченить
-        printf("%d _,_\n",__LINE__);
-    }
+        printf("%d _", __LINE__);
+    } // TODO refresh selection from temp var
 
-        /* if there's a selection command sets a new current selection */
-    else {clargs->cmds[clargs->cmds_c].opt = SEL;get_nums(command, clargs, exit_code);}
+        /* if there's a selection cmd sets a new current selection */
+    else { get_nums(cmd, clargs, exit_code);}
+
+    if(clargs->cmds[clargs->cmds_c].proc_opt >= MIN && clargs->cmds[clargs->cmds_c].proc_opt <= DCOL)
+    {
+        clargs->cmds[clargs->cmds_c].cmd_opt = PRC; /* now cmd option is processing the data */
+    }
 
     CHECK_EXIT_CODE
     FREE(currcom)
 }
 
+void a_ch_cmd(carr_t *cmd, char item, int *exit_code)
+{
+    if(item == '[' || item == ']')
+        return;
+    else
+        a_carr(cmd, item, exit_code);
+}
+
+//TODO написать документацию, // FIXME хзхз
+void prep_for_next_cmd(carr_t *cmd, int *cmds_c, const int *pos, const int *arglen )
+{
+    /* move to the next cmd */
+    if(*pos != *arglen - 1)
+        *cmds_c++;
+
+    cmd->elems_c = 0;
+    cmd->isempty = true;
+    memset(cmd->elems_v, 0, cmd->elems_c); // fill an array with 0s
+}
+
+/* Pocess cmdm, check if the cmd have ben initialized and call function to process the table or change an
+ * exit_code */ // TODO написать нормаьную документацию
+void process_cmd(clargs_t *clargs, tab_t *t, int *exit_code)
+{
+    switch(clargs->cmds[clargs->cmds_c].cmd_opt)
+    {
+        case SEL: /* selection is already set in the functinon */
+#ifdef CMDS
+            printf("(\n%d) opt SEL, cursel: [%d,%d,%d,%d]\n", __LINE__, clargs->cmds[clargs->currsel].row_1,
+                   clargs->cmds[clargs->currsel].col_1,
+                   clargs->cmds[clargs->currsel].row_2,
+                   clargs->cmds[clargs->currsel].col_2
+            );
+#endif
+            break;
+        case PRC: /* call a function initialized by a given parameter */
+#ifdef CMDS
+            printf("\n(%d) opt PRC \n", __LINE__);
+#endif
+            process_table(clargs, t, exit_code);
+            break;
+        case NOPT:
+#ifdef CMDS
+            printf("\n(%d) opt NOPT \n", __LINE__);
+#endif
+            *exit_code = NUM_UNRECARF_ERR;
+            break;
+    }
+}
+
+void init_cmd(carr_t *cmd, tab_t *t, clargs_t *clargs, int *exit_code)
+{
+    cell_trim(cmd, exit_code);
+    CHECK_EXIT_CODE
+#ifdef SELECT
+    printf("(%d) %s\n", __LINE__, cmd->elems_v);
+#endif
+
+    /* edit structure of the table or change current selection */
+    if(strchr(cmd->elems_v, ' ') == NULL)
+    {
+        init_n_wspased_cmd(cmd, clargs, exit_code);
+    }
+    else /* init and call data processing functions or process temp variables */
+    {
+        init_wspased_cmd(cmd, clargs, t, exit_code);
+    }
+    CHECK_EXIT_CODE
+
+    /* expand tab after a comamnd */ // TODO move to the fun
+    expand_tab(clargs, t, exit_code);
+}
+
 /**
- *  For each agrument (selection or processing command)
+ *  For each agrument (selection or processing cmd)
  *  copies everything before ; or before \0 t to the temp array,
  *  then parses the temp array and calls the function optionally
  *
- * @param dst ar array where to copy a command
- * @param src a commandline argument
+ * @param cmd ar array where to copy a cmd
+ * @param src a cmdline argument
  * @param exit_code can be changed if the error occured
  */
-void init_cmd(carr_t *dst, const char *arg, clargs_t *clargs, tab_t *t, int *exit_code)
+void init_cmds(carr_t *cmd, const char *arg, clargs_t *clargs, tab_t *t, int *exit_code)
 {
+    //region variables
     int arglen = (int)strlen(arg);
     bool quoted = false;
 
-    clargs->cmds_c = 1;  /* first command is a 1 1(default) selection  */
+    clargs->cmds_c = 1;  /* first cmd is a 1 1(default) selection  */
+
     /* position of current cell selection(first selection is 1 1 by default)
-     * next current selection is an index in the array woth commands */
+     * next current selection is an index in the array woth cmds */
     clargs->cellsel = 0;
+
+    /* set current cmd to 0 */
+    clargs->cmds[clargs->cmds_c].cmd_opt = NOPT;
 
     /* set a selection to the first cell(by default) */
     clargs->cmds[clargs->cellsel].row_1 = 1;
     clargs->cmds[clargs->cellsel].row_2 = 1;
     clargs->cmds[clargs->cellsel].col_1 = 1;
     clargs->cmds[clargs->cellsel].col_2 = 1;
+    //endregion
 
-    /* write argument to an array */
+    /* walk through other tokens */
     for(int p = 0; p < arglen; p++)
     {
         if(arg[p] == '\"')
         {
             NEG(quoted)
         }
-        
+
         /* if the end of the argument reached */
         else if((arg[p] == ';' && !quoted) || p == arglen - 1)
         {
-            cell_trim(dst, exit_code);
+            /* initialize a cmd */
+            init_cmd(cmd, t, clargs, exit_code);
+
+            /* process an initialized cmd change the exit_code */
+            process_cmd(clargs,t,exit_code);
             CHECK_EXIT_CODE
-#ifdef SELECT
-            printf("(%d) %s\n",__LINE__, dst->elems_v);
+
+            prep_for_next_cmd(cmd, &clargs->cmds_c, &p, &arglen);
+#ifdef CMDS
+            printf("(%d) prepared: next cmd(%d), arglen(%d), pos(%d) ", __LINE__, clargs->cmds_c, arglen, p);
 #endif
-
-            /* edit structure of the table or change current selection */
-            if(strchr(dst->elems_v, ' ') == NULL)
-            {cng_sel_tab_ed(dst, clargs, exit_code);}
-            
-            /* init and call data processing functions or process temp variables */
-            else
-            {daporc_tmp_vars(dst, clargs, t, exit_code);}
-            CHECK_EXIT_CODE
-
-            /* expand tab after a comamnd */ // TODO move to the fun
-            expand_tab(clargs, t, exit_code);
-
-            /* call a function initialized by a given parameter */
-            process_table(clargs, t, exit_code);
-            CHECK_EXIT_CODE
-
-            /* move to the next command */
-            if(p != arglen -1)
-            {   clargs->cmds_c++;}
-            dst->elems_c = 0; // TODO make a function for it
-            dst->isempty = true;
-            memset(dst->elems_v, 0, dst->elems_c); // fill an array with 0s
         }
-
-        if(arg[p] == '[' || arg[p] == ']')
-            continue;
-        else
-            a_carr(dst, arg[p], exit_code);
+        /* add a char to the cmd arr */
+        a_ch_cmd(cmd, arg[p], exit_code);
         CHECK_EXIT_CODE
 
     }
@@ -1128,8 +1247,8 @@ void init_cmd(carr_t *dst, const char *arg, clargs_t *clargs, tab_t *t, int *exi
 /**
  * Initializes an array of entered separators(DELIM)
  *
- * @param argc Number of commandline arguments
- * @param argv An array with commandline arguments
+ * @param argc Number of cmdline arguments
+ * @param argv An array with cmdline arguments
  * @param exit_code exit code to change if an error occurred
  */
 void init_separators(const int *argc, const char **argv, clargs_t *clargs, int *exit_code)
@@ -1149,7 +1268,7 @@ void init_separators(const int *argc, const char **argv, clargs_t *clargs, int *
         CHECK_EXIT_CODE
     }
 
-        /* if user entered -d flag and there are function names and filename in the commandline */
+        /* if user entered -d flag and there are function names and filename in the cmdline */
     else if(*argc == 5 && !strcmp(argv[1], "-d"))
     {
         clargs->defaultsep = false;
@@ -1158,7 +1277,7 @@ void init_separators(const int *argc, const char **argv, clargs_t *clargs, int *
             /* checks if the user has not entered characters that will lead to undefined program behavior */
             if( argv[2][k] == '\\' || argv[2][k] == '\"' || argv[2][k] == '\'')
             {
-                *exit_code = W_SEPARATORS_ERROR;
+                *exit_code = W_SEPARATORS_ERR;
                 CHECK_EXIT_CODE
             }
             set_add_item(&(clargs->seps), argv[2][k], exit_code);
@@ -1169,7 +1288,7 @@ void init_separators(const int *argc, const char **argv, clargs_t *clargs, int *
 
     else
     {
-        *exit_code = NUM_UNSUPARG_ERROR;
+        *exit_code = W_SEPARATORS_ERR;
         CHECK_EXIT_CODE
     }
 #ifdef SEPSBUG
@@ -1181,30 +1300,30 @@ void init_separators(const int *argc, const char **argv, clargs_t *clargs, int *
 }
 //endregion
 
-/** TODO add the ability to extract commands from a file
- * calls a function to parse commandline arguments
+/** TODO add the ability to extract cmds from a file
+ * calls a function to parse cmdline arguments
  */
 void parse_clargs_proc_tab(const int *argc, const char **argv, tab_t *t, clargs_t *clargs, int *exit_code)
 {
-    /* by default has value 1, which means there was no delim in the command line */
+    /* by default has value 1, which means there was no delim in the cmd line */
     int clarg = (clargs->defaultsep) ? POSNDEL : POSWDEL;
 
-    carr_t command;      /* an array for one command from the set fo the commands */
-    carr_ctor(&command, MEMBLOCK, exit_code);
+    carr_t cmd;      /* an array for one cmd from the set fo the cmds */
+    carr_ctor(&cmd, MEMBLOCK, exit_code);
     CHECK_EXIT_CODE
 
-    /* means there is no commands entered in the command line */
+    /* means there is no cmds entered in the cmd line */
     if(clarg == *argc - 1)
     {
-        *exit_code = NUM_UNSUPARG_ERROR;
+        *exit_code = NUM_UNSUPARG_ERR;
         error_line_global = __LINE__;
         return;
     }
 
     /* copy an argument to the array and call the function for it */
-    init_cmd(&command, argv[clarg], clargs, t, exit_code);
+    init_cmds(&cmd, argv[clarg], clargs, t, exit_code);
     CHECK_EXIT_CODE
-    FREE(command.elems_v)
+    FREE(cmd.elems_v)
 }
 
 void print_error_message(const int *exit_code)
@@ -1215,9 +1334,9 @@ void print_error_message(const int *exit_code)
             "Twenty afternoons in utopia... Cannot allocate memory",
             "Entered separators are not supported buy the program",
             "You've entered wrong number of arguments",
-            "Command you've entered has unsupported value",
+            "cmd you've entered has unsupported value",
             "There is no file with this name",
-            "Command you've entered is too long",
+            "cmd you've entered is too long",
             "Quotes dont match",
 
             "Why?! And we light up the sky!!!",
@@ -1231,7 +1350,7 @@ void print_error_message(const int *exit_code)
 }
 
 /*
- * Runs the program: initializes structures, then initializes commandline arguments, then processes the table
+ * Runs the program: initializes structures, then initializes cmdline arguments, then processes the table
  * After every initializing checks for an exit_code to return it if the error has been occurred
  * Frees memory that was allocated while program was running.
  */
@@ -1243,7 +1362,7 @@ int run_program(const int argc, const char **argv)
     clargs_t clargs;
     //endregion
 
-    /* initialize separators from commandline */
+    /* initialize separators from cmdline */
     init_separators(&argc, argv, &clargs, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
@@ -1251,12 +1370,13 @@ int run_program(const int argc, const char **argv)
     get_table(&argc, argv, &t, &clargs, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
-    /* parse commandline arguments and process table for them */
+    /* parse cmdline arguments and process table for them */
     parse_clargs_proc_tab(&argc, argv, &t, &clargs, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
     /* trim table before printing */ // TODO добавить арг final, который значит, что надо все подровнять
-    table_trim;
+    //table_trim_bef_printing(&t, &exit_code)
+    table_trim(&t, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
     print_tab(&t, &clargs.seps, clargs.ptr);
