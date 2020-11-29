@@ -1193,12 +1193,12 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
     FREE(currcom)
 }
 
-void a_ch_cmd(carr_t *cmd, char item, int *exit_code)
+void a_ch_cmd(carr_t *cmd, char item, bool quoted, int *exit_code)
 {
-    if(item == '[' || item == ']')
-        return;
-    else
-        a_carr(cmd, item, exit_code);
+    if(quoted)
+    {a_carr(cmd, item, exit_code);}
+    else if(item == '[' || item == ']' || item == ';')
+    {return;}
 }
 
 //TODO написать документацию, // FIXME хзхз
@@ -1211,15 +1211,29 @@ void prep_for_next_cmd(carr_t *cmd, int *cmds_c, const int *pos, const int *argl
     carr_clear(cmd);
 }
 
+#ifdef CMDS
+char* print_opt(int c)
+{
+    if(c==SET){return "set";}else if(c==FIND){return "find";}else if(c==MIN){return "min";}else if(c==MAX)
+    {return"max";}else if(c==CLEAR){return "clear";}else if(c==IROW){return "irow";}else if(c==AROW){return "arow";}
+    else if(c==DROW){return "drow";}else if(c==ICOL){return "icol";}else if(c==ACOL){return "acol";}else if(c==DCOL)
+    {return "dcol";}else return "NaN";
+}
+#endif
+
 /* Pocess cmdm, check if the cmd have ben initialized and call function to process the table or change an
  * exit_code */ // TODO написать нормаьную документацию
 void process_cmd(cl_t *cl, tab_t *t, int *exit_code)
 {
+#ifdef CMDS
+    int c = cl->cmds[cl->cmds_c].cmd_opt;
+    printf("\n(%d) process_cmd opt = %s\n",__LINE__, print_opt(c));
+#endif
     switch(cl->cmds[cl->cmds_c].cmd_opt)
     {
         case SEL: /* selection is already set in the functinon */
 #ifdef CMDS
-            printf("(\n%d) opt SEL, cursel: [%d,%d,%d,%d]\n", __LINE__, cl->cmds[cl->currsel].row_1,
+            printf("(%d) opt SEL, cursel: [%d,%d,%d,%d]\n", __LINE__, cl->cmds[cl->currsel].row_1,
                    cl->cmds[cl->currsel].col_1,
                    cl->cmds[cl->currsel].row_2,
                    cl->cmds[cl->currsel].col_2
@@ -1246,22 +1260,30 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
     cell_trim(cmd, exit_code);
     CHECK_EXIT_CODE
 #ifdef SELECT
-    printf("(%d) %s\n", __LINE__, cmd->elems_v);
+    printf("(%d) init cmd cmd = \"%s\"\n", __LINE__, cmd->elems_v);
 #endif
 
-    /* edit structure of the table or change current selection */
-    if(strchr(cmd->elems_v, ' ') == NULL)
+    if(strlen(cmd->elems_v) > 1)
     {
-        init_n_wspased_cmd(cmd, cl, exit_code);
-    }
-    else /* init and call data processing functions or process temp variables */
-    {
-        init_wspased_cmd(cmd, cl, t, exit_code);
-    }
-    CHECK_EXIT_CODE
+        /* edit structure of the table or change current selection */
+        if(strchr(cmd->elems_v, ' ') == NULL)
+        {
+            init_n_wspased_cmd(cmd, cl, exit_code);
+        }
+        else /* init and call data processing functions or process temp variables */
+        {
+            init_wspased_cmd(cmd, cl, t, exit_code);
+        }
+        CHECK_EXIT_CODE
 
-    /* expand tab after a comamnd */ // TODO move to the fun
-    expand_tab(cl, t, exit_code);
+        /* expand tab after a comamnd */ // TODO move to the fun
+        expand_tab(cl, t, exit_code);
+    }
+    else
+    {
+        *exit_code = LEN_UNSUPCMD_ERR;
+        CHECK_EXIT_CODE
+    }
 }
 
 /**
@@ -1275,6 +1297,9 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
  */
 void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
 {
+#ifdef CMDS
+    printf("\n\n(%d) init_cmds: \n", __LINE__);
+#endif
     //region variables
     int arglen = (int)strlen(arg);
     bool quoted = false;
@@ -1298,6 +1323,9 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
     /* walk through other tokens */
     for(int p = 0; p < arglen; p++)
     {
+#ifdef CMDS
+        printf("(%d) arg[%d] = %c \n", __LINE__, p,arg[p]);
+#endif
         if(arg[p] == '\"')
         {
             NEG(quoted)
@@ -1319,7 +1347,11 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
 #endif
         }
         /* add a char to the cmd arr */
-        a_ch_cmd(cmd, arg[p], exit_code);
+        if(quoted)
+        {a_carr(cmd, arg[p], exit_code);}
+        else if(arg[p] == '[' || arg[p] == ']' || arg[p] == ';') //TODO change me to a function
+        {return;}
+        //a_ch_cmd(cmd, arg[p],quoted,exit_code);
         CHECK_EXIT_CODE
 
     }
