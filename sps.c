@@ -1065,7 +1065,7 @@ void irow_f(cl_t *cl, tab_t *t, int *exit_code)
     t->row_c++;
 
     /* create a row */
-    row_ctor(&t->rows_v[cl->cmds[cl->currsel].row_1 - 1], t->length, exit_code);
+    row_ctor(&t->rows_v[cl->cmds[cl->currsel].row_1 - 1], t->col_c + 1, exit_code);
 }
 
 
@@ -1088,7 +1088,7 @@ void arow_f(cl_t *cl, tab_t *t, int *exit_code)
     t->row_c++;
 
     /* create a row */
-    row_ctor(&t->rows_v[cl->cmds[cl->currsel].row_2 - 1], t->length, exit_code);
+    row_ctor(&t->rows_v[cl->cmds[cl->currsel].row_2 - 1], t->col_c + 1, exit_code);
 }
 
 
