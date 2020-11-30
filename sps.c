@@ -47,7 +47,7 @@ int error_line_global = 0;
     CHECK_EXIT_CODE\
 }
 
-#define MEMBLOCK     10 /* allocation step */
+#define MEMBLOCK     50 /* allocation step */
 #define MAXVAL      -42
 #define ALLVALS     -13
 #define PTRNLEN      1001
@@ -221,43 +221,17 @@ bool lessthan(int n1, int n2)
 
 char *print_opt(int c)
 {
-    if(c == SET)
-    {return "-set-";}
-    else if(c == FIND)
-    {return "-find-";}
-    else if(c == MIN)
-    {return "-min-";}
-    else if(c == MAX)
-    {return "-max-";}
-    else if(c == CLEAR)
-    {return "-clear-";}
-    else if(c == IROW)
-    {return "-irow-";}
-    else if(c == AROW)
-    {return "-arow-";}
-    else if(c == DROW)
-    {return "-drow-";}
-    else if(c == ICOL)
-    {return "-icol-";}
-    else if(c == ACOL)
-    {return "-acol-";}
-    else if(c == DCOL)
-    {return "-dcol-";}
-    else return "-NaN-";
+    if(c == SET){return "-set-";}else if(c == FIND){return "-find-";}else if(c == MIN){return "-min-";}else if(c == MAX)
+    {return "-max-";}else if(c == CLEAR){return "-clear-";}else if(c == IROW){return "-irow-";}else if(c == AROW)
+    {return "-arow-";}else if(c == DROW){return "-drow-";}else if(c == ICOL){return "-icol-";}else if(c == ACOL)
+    {return "-acol-";}else if(c == DCOL){return "-dcol-";}else return "-NaN-";
 }
 
 char* print_cmd_opt(int c)
 {
     switch (c)
     {
-        case NOPT:
-            return "-NOPT-";
-        case PRC:
-            return "-PRC-";
-        case SEL:
-            return "-SEL-";
-        default:
-            return "-NaN-";
+        case NOPT:{return "-NOPT-";}case PRC:{return "-PRC-";}case SEL:{return "-SEL-";}default:{return "-NaN-";}
     }
 }
 
@@ -273,7 +247,7 @@ void free_table(tab_t *t)
     for(int row = t->length - 1; row >= 0; row--)
     {
 #ifdef SHOWFREE
-        printf("row %d of len = %d with %d col_c: \n", row, t->rows_v[row].length, t->rows_v[row].cols_c);
+        printf("(%d) row %d of len %d with %d col_c: \n",__LINE__, row, t->rows_v[row].length, t->rows_v[row].cols_c);
 #endif
         for(int col = t->col_c; col >= 0; col--) // FIXME (1) + 1
         {
@@ -309,7 +283,7 @@ void clear_data(tab_t *t, cl_t *cl)
 //endregion
 
 //region CONSTRUCTORS
-
+/* */
 void carr_clear(carr_t *carr)
 {
 #ifdef CMDS
@@ -322,7 +296,6 @@ void carr_clear(carr_t *carr)
     printf("aft \"%s\"\n", carr->elems_v);
 #endif
 }
-
 
 void row_clear(row_t *row)
 {
@@ -565,7 +538,6 @@ void expand_tab(cl_t *cl, tab_t *t, int *exit_code) // FIXME
         }
         t->col_c = t->rows_v[r].length - 1; /* now all rows have len of max col len */
     }
-
 }
 
 /* trims an array of characters */
@@ -595,7 +567,7 @@ void row_trim(row_t *row, int siz, int *exit_code, rtrim_opt opt)
 {
     /* trim all cells in the row */
 #ifdef SHOWTAB
-    printf("(%d) cols -> %d  len -> %d . \n", __LINE__, row->cols_c, row->length );
+    printf("\nROW_TRIM\n(%d) cols(%d)  len(%d)  \n", __LINE__, row->cols_c, row->length );
 #endif
 
     if(row->length > siz)
@@ -612,6 +584,9 @@ void row_trim(row_t *row, int siz, int *exit_code, rtrim_opt opt)
 
     else if(row->length < siz)
     {
+#ifdef SHOWTAB
+        printf("\nROW_TRIM\n(%d) row->len(%d) < siz(%d)",__LINE__, row->length, siz);
+#endif
         row->cols_v = (carr_t *)realloc(row->cols_v, siz * sizeof(carr_t));
         CHECK_ALLOC_ERR(row->cols_v)
 
@@ -639,9 +614,53 @@ void row_trim(row_t *row, int siz, int *exit_code, rtrim_opt opt)
 #endif
 }
 
-void table_trim_bef_printing()
+int fnum_unemp_cols(row_t *r)
 {
-    return;
+    int empties = 0;
+    for(int c = r->length - 1; c >= 0; c--)
+    {
+        if(r->cols_v[c].isempty)
+        {    empties++;}
+        else
+        { return r->length - empties;}
+    }
+    return 1;
+}
+
+int find_max_unemp(tab_t *t)
+{
+    int max_unemp = 1; /* prevent memory error if the whole table is empty */
+    int tmp = 0;
+
+    /* initialize the row with max number of none */
+    for(int r = 0; r < t->length; r++)
+    {
+        if(!r)
+        {
+            max_unemp = fnum_unemp_cols(&t->rows_v[r]);
+        } else
+        {
+            tmp = fnum_unemp_cols(&t->rows_v[r]);
+            if(tmp > max_unemp)
+            {
+                max_unemp = tmp;
+            }
+        }
+    }
+    return max_unemp;
+}
+
+// TODO documentation
+void table_trim_bef_printing(tab_t *t, int *exit_code)
+{
+    int max_unemp = find_max_unemp(t);
+#ifdef TRIM
+#endif
+    for(int r = 0; r < t->length; r++)
+    {
+        row_trim(&t->rows_v[r], max_unemp, exit_code, NCOLS);
+    }
+    t->col_c = max_unemp - 1;
 }
 
 /* trims a table by reallocating rows and cols */
@@ -667,12 +686,14 @@ void table_trim(tab_t *t, int *exit_code)
         t->rows_v = (row_t*)realloc(t->rows_v, (t->length) * sizeof(row_t));
         CHECK_ALLOC_ERR(t->rows_v)
     }
-
+#ifdef SHOWTAB
+    printf("\nTABLE_TRIM\n");
+#endif
     /* trim each row */
     for(row = 0; row <= t->row_c; row++)
     {
 #ifdef SHOWTAB
-        printf("\n(%d) untrim row %d has len (%d) and cols (%d)\n", __LINE__,row, t->rows_v[row].length,
+        printf("(%d) untrim row %d has len (%d) and cols (%d)\n", __LINE__,row, t->rows_v[row].length,
                t->rows_v[row].cols_c );
 #endif
 
@@ -931,7 +952,7 @@ bool get_cell(carr_t *col, cl_t *cl, int *exit_code)
 /* gets a row from the file and adds it to the table */
 void get_row(row_t *row, cl_t *cl, int *exit_code)
 {
-    bool end;
+    int end;
     for(row->cols_c = 0; !feof(cl->ptr); row->cols_c++ )
     {
         if(row->cols_c == row->length)
@@ -990,7 +1011,7 @@ void get_table(const int *argc, const char **argv, tab_t *t, cl_t *cl, int *exit
                 CHECK_ALLOC_ERR(t->rows_v)
 
                 /* create a row */
-                row_ctor(&t->rows_v[t->row_c],MEMBLOCK, exit_code);
+                row_ctor(&t->rows_v[t->row_c], MEMBLOCK, exit_code);
             }
             get_row(&t->rows_v[t->row_c], cl, exit_code);
             CHECK_EXIT_CODE
@@ -1281,8 +1302,8 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
     if     (!strcmp(cmd->elems_v, "irow" )) { cl->cmds[cl->cmds_c].proc_opt = IROW; }
     else if(!strcmp(cmd->elems_v, "arow" )) { cl->cmds[cl->cmds_c].proc_opt = AROW; }
     else if(!strcmp(cmd->elems_v, "drow" )) { cl->cmds[cl->cmds_c].proc_opt = DROW; }
-    else if(!strcmp(cmd->elems_v, "icol ")) { cl->cmds[cl->cmds_c].proc_opt = ICOL; }
-    else if(!strcmp(cmd->elems_v, "acol ")) { cl->cmds[cl->cmds_c].proc_opt = ACOL; }
+    else if(!strcmp(cmd->elems_v, "icol")) { cl->cmds[cl->cmds_c].proc_opt = ICOL; }
+    else if(!strcmp(cmd->elems_v, "acol")) { cl->cmds[cl->cmds_c].proc_opt = ACOL; }
     else if(!strcmp(cmd->elems_v, "dcol" )) { cl->cmds[cl->cmds_c].proc_opt = DCOL; }
     else if(!strcmp(cmd->elems_v, "clear")) { cl->cmds[cl->cmds_c].proc_opt = CLEAR;}
     else if(!strcmp(cmd->elems_v, "min"  )) { cl->cmds[cl->cmds_c].proc_opt = MIN;  }
