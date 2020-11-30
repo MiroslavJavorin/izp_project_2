@@ -467,7 +467,6 @@ void a_carr(carr_t *arr,const char item, int *exit_code)
     arr->isempty = false;
     arr->elems_v[arr->elems_c++] = item;
     arr->elems_v[arr->elems_c]   = 0; /* add terminating 0 */
-
 }
 
 /**
@@ -529,26 +528,27 @@ void expand_tab(cl_t *cl, tab_t *t, int *exit_code) // FIXME
     /* expand_rows */
     if(cl->cmds[cl->currsel].row_2 - 1 > t->row_c)
     {
-#ifdef SELECT
-        printf("(%d) row_c(%d) with len(%d) increased to %d\n", __LINE__, t->row_c,t->length,
-                cl->cmds[cl->currsel].col_2 -1);
-#endif
         /* allocate new memory for rows */
-        t->length = cl->cmds[cl->currsel].col_2;
-        t->rows_v = (row_t*)realloc(t->rows_v, t->length * sizeof(row_t));
+        t->rows_v = (row_t*)realloc(t->rows_v, cl->cmds[cl->currsel].col_2 * sizeof(row_t));
         CHECK_ALLOC_ERR(t->rows_v)
+
+#ifdef EXPAND
+    printf("\nEXPAND_TAB\n(%d) table expanded from %d to %d rows\n", __LINE__, t->length, cl->cmds[cl->currsel].col_2);
+#endif
+        t->length = cl->cmds[cl->currsel].col_2;
 
         /* allocate new memory for columns */
         for(int r = t->row_c + 1; r < t->length; r++)
         {
             row_ctor(&t->rows_v[r], cl->cmds[cl->currsel].col_2, exit_code);
             CHECK_EXIT_CODE
+            t->rows_v[r].cols_c = cl->cmds[cl->currsel].col_2 - 1;
         }
         t->row_c = t->length - 1;
     }
 
-    /* expand collumns */
-    for(int r = cl->cmds[cl->currsel].row_1 - 1; r < cl->cmds[cl->currsel].row_2; r++)
+    /* expand collumns for all rows */
+    for(int r = 0; r < cl->cmds[cl->currsel].row_2; r++)
     {
         if(t->rows_v[r].cols_c < cl->cmds[cl->currsel].col_2 - 1)
         {
@@ -563,7 +563,9 @@ void expand_tab(cl_t *cl, tab_t *t, int *exit_code) // FIXME
             }
             t->rows_v[r].cols_c = t->rows_v[r].length - 1;
         }
+        t->col_c = t->rows_v[r].length - 1; /* now all rows have len of max col len */
     }
+
 }
 
 /* trims an array of characters */
@@ -637,31 +639,10 @@ void row_trim(row_t *row, int siz, int *exit_code, rtrim_opt opt)
 #endif
 }
 
-//void row_trim_1(row_t *row, int newsize, int *exit_code)
-//{
-//    /* trim all cells in the row */
-//#ifdef SHOWTAB
-//    printf("(%s) cols -> %d  len -> %d . \n", __FUNCTION__, row->cols_c, row->length);
-//#endif
-//    for(int cell = row->cols_c; cell >= 0; cell--)
-//    {
-//        cell_trim(&row->cols_v[row->cols_c], exit_code);
-//        CHECK_EXIT_CODE
-//    }
-//
-//    for(int i = row->length - 1; i > row->cols_c; i--)
-//    {FREE(row->cols_v[i].elems_v)}
-//
-//    //TODO check if there is a need to trim a row
-//    row->cols_v = (carr_t *)realloc(row->cols_v, (row->cols_c + 1) * sizeof(carr_t));
-//    CHECK_ALLOC_ERR(row->cols_v)
-//
-//    row->length = row->cols_c + 1;
-//#ifdef SHOWTAB
-//    printf("(%d) %s: len %d cols %d \n", __LINE__, __FUNCTION__);
-//#endif
-//}
-
+void table_trim_bef_printing()
+{
+    return;
+}
 
 /* trims a table by reallocating rows and cols */
 void table_trim(tab_t *t, int *exit_code)
@@ -1098,9 +1079,7 @@ void drow_f(cl_t *cl, tab_t *t, int *exit_code) // TODO
     printf("\nDROW\n(%d) row_fr(%d) col_c(%d) row_c(%d) len(%d)", __LINE__, cl->cmds[cl->currsel].row_1, t->col_c,
            t->row_c, t->length);
 #endif
-
 }
-
 
 void icol_f(cl_t *cl, tab_t *t, int *exit_code) // FIXME
 {
@@ -1636,7 +1615,7 @@ int run_program(const int argc, const char **argv)
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
     /* trim table before printing */ // TODO добавить арг final, который значит, что надо все подровнять
-    //table_trim_bef_printing(&t, &exit_code)
+    table_trim_bef_printing(&t, &exit_code);
     //table_trim(&t, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
