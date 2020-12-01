@@ -91,7 +91,7 @@ typedef enum
     MIN, MAX, CLEAR,
     IROW, AROW, DROW, ICOL, ACOL, DCOL
     //  TODO дополнить
-} proc_opt_t;
+} opts_t;
 
 typedef enum
 {
@@ -119,7 +119,7 @@ typedef struct
     int row_1, col_1, row_2, col_2;
     cmd_opt_t cmd_opt; /* defines processing option or selection option */
 
-    proc_opt_t proc_opt;
+    opts_t proc_opt;
     char pttrn[PTRNLEN];   /* if there's a pattern in the cmd */
 
     bool isset;
@@ -955,6 +955,7 @@ void get_table(const int *argc, const char **argv, tab_t *t, cl_t *cl, int *exit
 
                 /* create a row */
                 row_ctor(&t->rows_v[t->row_c], MEMBLOCK, exit_code);
+                CHECK_EXIT_CODE
             }
             get_row(&t->rows_v[t->row_c], cl, exit_code);
             CHECK_EXIT_CODE
@@ -1029,12 +1030,41 @@ void min_max_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
     /* if targ_row and targ_col havn't been changed that means there is no cell in the selection with a number in it */
     if(targ_row != -1 && targ_col != -1)
     {
+#ifdef CMDS
+        printf("%d new selection [%d,%d,%d,%d]",__LINE__, targ_row + 1, targ_col + 1, targ_row + 1, targ_col + 1);
+#endif
         cl->cellsel = cl->cmds_c;
         set_sel(cl, t, targ_row + 1, targ_col + 1, targ_row + 1, targ_col + 1, exit_code);
     }
 }
 
-void find_f(cl_t *cl, tab_t *t, int *exit_code)// TODO
+void set_f(cl_t *cl, tab_t *t, int *exit_code)
+{
+    int r = cl->cmds[cl->currsel].row_1 - 1;
+    int c = cl->cmds[cl->currsel].col_1 - 1;
+    int len = 0;
+#ifdef CMDS
+    printf("\nSET_F\n");
+#endif
+    for( ; r < cl->cmds[cl->currsel].row_2; r++)
+    {
+        for( ; c < cl->cmds[cl->currsel].col_2; c++)
+        {
+            carr_clear(&t->rows_v[r].cols_v[c]);
+            len = (int)strlen(cl->cmds[cl->cmds_c].pttrn);
+#ifdef CMDS
+            printf("%d len %d for pattern -->%s<--\n", __LINE__, len, cl->cmds[cl->cmds_c].pttrn);
+#endif
+            for(int p = 0; p < len; p++)
+            {
+                a_carr(&t->rows_v[r].cols_v[c], cl->cmds[cl->cmds_c].pttrn[p], exit_code);
+                CHECK_EXIT_CODE
+            }
+        }
+    }
+}
+
+void find_f(cl_t *cl, tab_t *t, int *exit_code)
 {
 #ifdef CMDS
     printf("\nFIND_F\n%d HERE WE ARE \n",__LINE__);
@@ -1047,7 +1077,7 @@ void find_f(cl_t *cl, tab_t *t, int *exit_code)// TODO
     {
         for( ; c < cl->cmds[cl->currsel].col_2; c++)
         {
-            if(!strcmp(t->rows_v[r].cols_v[c].elems_v, cl->cmds[cl->cmds_c].pttrn))
+            if(strstr(t->rows_v[r].cols_v[c].elems_v, cl->cmds[cl->cmds_c].pttrn) != NULL)
             {
                 cl->cellsel = cl->cmds_c;
                 set_sel(cl, t, r + 1, c + 1, r + 1, c + 1, exit_code);
@@ -1270,6 +1300,9 @@ void process_table(cl_t *cl, tab_t *t, int *exit_code)
     printf("(%d)opt %s for cmd_c %d\n\n ", __LINE__, print_opt(cl->cmds[cl->cmds_c].proc_opt), cl->cmds_c);
 #endif
 
+    if(cl->cmds[cl->cmds_c].proc_opt == SET)
+    {set_f(cl, t, exit_code);}
+
     if(cl->cmds[cl->cmds_c].proc_opt == AROW || cl->cmds[cl->cmds_c].proc_opt == IROW)
     {irow_arow_f(cl, t, exit_code, cl->cmds[cl->cmds_c].proc_opt);}
 
@@ -1299,7 +1332,7 @@ void process_table(cl_t *cl, tab_t *t, int *exit_code)
  */
 void init_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
 {
-    // [find STR] - v již existujícím výběru buněk vybere první buňku, jejíž hodnota obsahuje podřetězec STR.
+
 
     // set STR - nastaví hodnotu buňky na řetězec STR.
     // Řetězec STR může být ohraničen uvozovkami a může obsahovat speciální znaky uvozené lomítkem (viz formát tabulky)
@@ -1313,7 +1346,9 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
     //count  [R,C] - stejné jako sum, ale ukládá se počet neprázdných buněk z vybraných buněk
     //len    [R,C] - do buňky na řádku R a sloupci C uloží délku řetězce aktuálně vybrané buňky
 
-    if(strbstr(cmd->elems_v, "find "))
+
+    /* command is "find" */
+    if(!strncmp("find ", cmd->elems_v, strlen("find ")))
     {
         cl->cmds[cl->cmds_c].proc_opt = FIND;
         cl->cmds[cl->cmds_c].cmd_opt  = SEL;
@@ -1322,6 +1357,27 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
         {
             /* write a pattern to the structure */
             memcpy(cl->cmds[cl->cmds_c].pttrn, cmd->elems_v + strlen("find "), strlen(cmd->elems_v + strlen("find ")));
+#ifdef CMDS
+            printf("\nINIT_WSPASED_CMD\n%d pattern -->%s<--", __LINE__, cl->cmds[cl->cmds_c].pttrn);
+#endif
+        }
+
+        /* pattern is too long */
+        else
+        {
+            *exit_code = LEN_UNSUPCMD_ERR;
+            CHECK_EXIT_CODE
+        }
+    }
+
+    else if(!strncmp("set ", cmd->elems_v, strlen("set ")))
+    {
+        cl->cmds[cl->cmds_c].proc_opt = SET;
+        cl->cmds[cl->cmds_c].cmd_opt = PRC;
+        if(strlen(cmd->elems_v + strlen("set ")) < PTRNLEN)
+        {
+            /* write a pattern to the structure */
+            memcpy(cl->cmds[cl->cmds_c].pttrn, cmd->elems_v + strlen("set "), strlen(cmd->elems_v + strlen("set ")));
 #ifdef CMDS
             printf("\nINIT_WSPASED_CMD\n%d pattern -->%s<--", __LINE__, cl->cmds[cl->cmds_c].pttrn);
 #endif
@@ -1371,7 +1427,10 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
     else if(!strcmp(cmd->elems_v, "max"))
     {cl->cmds[cl->cmds_c].proc_opt = MAX;}
     else if(!strcmp(cmd->elems_v, "set"))
-    {cl->cmds[cl->cmds_c].proc_opt = SET;}// TODO разберись в set
+    {
+        // изменить паттерн и вставить во все выбранные клетки какой-то стринг
+        // set_f
+    }// TODO разберись в set
     /* revert back the selection that was before the temporary selection was applied */
     else if(!strcmp(cmd->elems_v, "_")){cl->currsel = cl->buf_sel;}
 
@@ -1389,8 +1448,11 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
                cl->cmds[cl->cmds_c].col_2);
 #endif
     }
-
-    if(cl->cmds[cl->cmds_c].proc_opt >= MIN && cl->cmds[cl->cmds_c].proc_opt <= DCOL)
+    if(cl->cmds[cl->cmds_c].proc_opt >= MIN && cl->cmds[cl->cmds_c].proc_opt <= MAX)
+    {
+        cl->cmds[cl->cmds_c].cmd_opt = SEL;
+    }
+    else if(cl->cmds[cl->cmds_c].proc_opt >= MIN && cl->cmds[cl->cmds_c].proc_opt <= DCOL)
     {
         cl->cmds[cl->cmds_c].cmd_opt = PRC; /* now cmd option is processing the data */
     }
