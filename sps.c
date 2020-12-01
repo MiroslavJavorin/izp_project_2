@@ -17,14 +17,8 @@
 #include <stdlib.h>
 //endregion
 
-// FIXME delete globs
+// FIXME deletme
 int error_line_global = 0;
-
-//region macros
-/*
- *  SHOWTAB  - shows operations
- *  SEPSBUG  - debug separators
- * */
 
 /* checks if exit code is greater than 0, which means error has been occurred,
  * calls function that prints an error on the stderr and returns an error */
@@ -40,7 +34,7 @@ int error_line_global = 0;
 /* checks exit code in a void function */
 #define CHECK_EXIT_CODE if(*exit_code > 0){ printf("(%d) err\n",__LINE__);error_line_global = __LINE__;return; }
 
-/* checking for an alloc error FIXME опаасно, поменяй на функцию */
+/* check for an alloc error */
 #define CHECK_ALLOC_ERR(arr) if(arr == NULL)\
 {\
     *exit_code = W_ALLOCATING_ERR;\
@@ -72,7 +66,7 @@ enum erorrs
     NO_SUCH_FILE_ERR,     /* no file with the entered name exists */
     LEN_UNSUPCMD_ERR,     /* unsupported len of the cmd   */
     Q_DONT_MATCH_ERR,      /* quotes dont match                   */
-    UNEXPD_BEHAV_ERR
+    BAD_INPUTFILE_ERR
 };
 
 enum argpos
@@ -89,7 +83,8 @@ typedef enum
     NOTH,
     SET, FIND,
     MIN, MAX, CLEAR,
-    IROW, AROW, DROW, ICOL, ACOL, DCOL
+    IROW, AROW, DROW, ICOL, ACOL, DCOL,
+    SWAP, SUM,AVG,COUNT,LEN
     //  TODO дополнить
 } opts_t;
 
@@ -400,28 +395,6 @@ void set_add_item(carr_t *set, char item, int *exit_code)
     }
 }
 
-///** TODO deleteme
-// * Returns the number of occurancef of the given char in the given array
-// *
-// * @param arr
-// * @param charchar
-// * @return
-// *//*
-//int stroc(char *str, char charchar)
-//{
-//    int n = 0;
-//    int i = 0;
-//    int slen = (int)strlen(str);
-//    while(i < slen)
-//    {
-//        if(charchar == str[i])
-//            n++;
-//        i++;
-//    }
-//    return n;
-//}*/
-
-
 //endregion
 
 //region CONSTRUCTORS
@@ -667,7 +640,7 @@ void table_trim_bef_printing(tab_t *t, int *exit_code)
 /* trims a table by reallocating rows and cols */
 void table_trim(tab_t *t, int *exit_code)
 {
-    int row;
+    int row = 0;
     int maxlen = 0;
 #ifdef SHOWTAB
     printf("\nTABLE_TRIM\n(%d) len (%d) rows(%d)\n", __LINE__, t->len, t->row_c);
@@ -717,7 +690,9 @@ void table_trim(tab_t *t, int *exit_code)
 
     t->col_c = maxlen - 1; //FIXME (1) -1
 
+#ifdef SHOWTAB
     printf("%d t->cols_c %d maxlen %d", __LINE__, t->col_c, maxlen);
+#endif
 }
 //endregion
 
@@ -754,7 +729,7 @@ void set_sel(cl_t *cl, tab_t *t, int row1, int col1, int row2, int col2, int *ex
 }
 
 /* returns true is newline or eof reached */
-void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code) // TODO поменять иусловия для cursel
+void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
 {
     char *token = NULL;
     char *ptr = NULL;
@@ -816,6 +791,10 @@ void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code) // TODO поме�
 
             CHECK_EXIT_CODE
         }
+        else if(ptr[0] != 0)
+        {
+            *exit_code = VAL_UNSUPCMD_ERR;
+        }
         token = strtok(NULL, ",");
     }
 
@@ -861,7 +840,7 @@ bool get_cell(carr_t *col, cl_t *cl, int *exit_code)
 {
     char buff_c;
     bool quoted = false;
-    for(col->elems_c = 0;;)
+    for(col->elems_c = 0; ; )
     {
 
         buff_c = (char)fgetc(cl->ptr);
@@ -875,9 +854,23 @@ bool get_cell(carr_t *col, cl_t *cl, int *exit_code)
         }
 
             /* start or end a quotation, where 34 is a quotation mark */
-        else if(buff_c == 34)
+        else if(buff_c == '\"')
         {
             NEG(quoted)
+        }
+        else if(buff_c == '\\')
+        {
+            buff_c = (char)fgetc(cl->ptr);
+            if(buff_c == '\n')
+            {
+                *exit_code = BAD_INPUTFILE_ERR;
+                return false;
+            }
+            else
+            {
+                a_carr(col, buff_c,exit_code);
+            }
+            continue;
         }
 
             /* if the char is a separator and it is not quoted */
@@ -1026,12 +1019,12 @@ void min_max_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
             }
         }
     }
-    
+
     /* if targ_row and targ_col havn't been changed that means there is no cell in the selection with a number in it */
     if(targ_row != -1 && targ_col != -1)
     {
 #ifdef CMDS
-        printf("%d new selection [%d,%d,%d,%d]",__LINE__, targ_row + 1, targ_col + 1, targ_row + 1, targ_col + 1);
+        printf("%d new selection [%d,%d,%d,%d]", __LINE__, targ_row + 1, targ_col + 1, targ_row + 1, targ_col + 1);
 #endif
         cl->cellsel = cl->cmds_c;
         set_sel(cl, t, targ_row + 1, targ_col + 1, targ_row + 1, targ_col + 1, exit_code);
@@ -1046,9 +1039,9 @@ void set_f(cl_t *cl, tab_t *t, int *exit_code)
 #ifdef CMDS
     printf("\nSET_F\n");
 #endif
-    for( ; r < cl->cmds[cl->currsel].row_2; r++)
+    for(; r < cl->cmds[cl->currsel].row_2; r++)
     {
-        for( ; c < cl->cmds[cl->currsel].col_2; c++)
+        for(; c < cl->cmds[cl->currsel].col_2; c++)
         {
             carr_clear(&t->rows_v[r].cols_v[c]);
             len = (int)strlen(cl->cmds[cl->cmds_c].pttrn);
@@ -1067,15 +1060,15 @@ void set_f(cl_t *cl, tab_t *t, int *exit_code)
 void find_f(cl_t *cl, tab_t *t, int *exit_code)
 {
 #ifdef CMDS
-    printf("\nFIND_F\n%d HERE WE ARE \n",__LINE__);
+    printf("\nFIND_F\n%d HERE WE ARE \n", __LINE__);
 #endif
     int r = cl->cmds[cl->currsel].row_1 - 1;
     int c = cl->cmds[cl->currsel].col_1 - 1;
 
     /* walk through all selected rows and columns */
-    for( ; r < cl->cmds[cl->currsel].row_2; r++)
+    for(; r < cl->cmds[cl->currsel].row_2; r++)
     {
-        for( ; c < cl->cmds[cl->currsel].col_2; c++)
+        for(; c < cl->cmds[cl->currsel].col_2; c++)
         {
             if(strstr(t->rows_v[r].cols_v[c].elems_v, cl->cmds[cl->cmds_c].pttrn) != NULL)
             {
@@ -1083,7 +1076,7 @@ void find_f(cl_t *cl, tab_t *t, int *exit_code)
                 set_sel(cl, t, r + 1, c + 1, r + 1, c + 1, exit_code);
 #ifdef CMDS
                 printf("%d pattern %s found, sel havе been changed to [%d,%d,%d,%d]\n", __LINE__, cl->cmds[cl->cmds_c]
-                        .pttrn, r+1, c+1, r+1, c+1);
+                        .pttrn, r + 1, c + 1, r + 1, c + 1);
 #endif
                 return;
             }
@@ -1143,44 +1136,44 @@ void drow_f(cl_t *cl, tab_t *t, int *exit_code) // TODO
         t->deleted = true;
     }
 
+    if(from > t->len)
+    {
+        to = t->len;
+
+        /* it means selected rows have already been deleted */
         if(from > t->len)
         {
-            to = t->len;
-
-            /* it means selected rows have already been deleted */
-            if(from > t->len)
-            {
-                return;
-            }
+            return;
         }
+    }
 
-        int diff = to - from + 1;
+    int diff = to - from + 1;
 
 #ifdef SELECT
-        printf("\nDROW\n%d  from = %d to = %d\n",__LINE__, from, to);
+    printf("\nDROW\n%d  from = %d to = %d\n", __LINE__, from, to);
 #endif
 
-        for(int r = from -1; r < to; r++)
+    for(int r = from - 1; r < to; r++)
+    {
+        for(int c = t->rows_v[r].len - 1; c >= 0; c--)
         {
-            for(int c = t->rows_v[r].len - 1; c >= 0; c--)
-            {
-                FREE(t->rows_v[r].cols_v[c].elems_v)
-            }
-            FREE(t->rows_v[r].cols_v)
+            FREE(t->rows_v[r].cols_v[c].elems_v)
         }
+        FREE(t->rows_v[r].cols_v)
+    }
 
-        for(int r = from - 1; r + diff < t->len; r++)
-        {
-            t->rows_v[r] = t->rows_v[r + diff];
-        }
-        t->row_c -= diff;
-        t->len -= diff;
+    for(int r = from - 1; r + diff < t->len; r++)
+    {
+        t->rows_v[r] = t->rows_v[r + diff];
+    }
+    t->row_c -= diff;
+    t->len -= diff;
 
 #ifdef CMDS
-        printf("\nDROW\n%d   t->row_c %d   t->len %d\n", __LINE__, t->row_c, t->len);
+    printf("\nDROW\n%d   t->row_c %d   t->len %d\n", __LINE__, t->row_c, t->len);
 #endif
-        /* re-allocate memory */
-        t->rows_v = (row_t *)realloc(t->rows_v, t->len * sizeof(row_t));
+    /* re-allocate memory */
+    t->rows_v = (row_t *)realloc(t->rows_v, t->len * sizeof(row_t));
 }
 
 
@@ -1238,7 +1231,7 @@ void dcol_f(cl_t *cl, tab_t *t, int *exit_code)
         CHECK_EXIT_CODE
     }
 
-    /* The second option removes only some of the columns*/
+        /* The second option removes only some of the columns*/
     else
     {
         int r_from = cl->cmds[cl->currsel].row_1;
@@ -1273,7 +1266,7 @@ void dcol_f(cl_t *cl, tab_t *t, int *exit_code)
                 }
             }
 
-            printf("%d  clear from %d to %d\n",__LINE__, c_from, c_to);
+            printf("%d  clear from %d to %d\n", __LINE__, c_from, c_to);
 
             /* first free all allocated cells */
             for(int c = c_from - 1; c < c_to; c++)
@@ -1323,6 +1316,69 @@ void process_table(cl_t *cl, tab_t *t, int *exit_code)
 
 //region cmdLINE ARGS PARSING
 
+void add_ptrn(carr_t *cmd, char *arr, char *ptrn, int *exit_code)
+{
+    if(strlen(cmd->elems_v + strlen(ptrn)) < PTRNLEN)
+    {
+        /* write a pattern to the structure */
+        memcpy(arr, cmd->elems_v + strlen(ptrn), strlen(cmd->elems_v + strlen(ptrn)));
+#ifdef CMDS
+        printf("\nINIT_WSPASED_CMD\n%d pattern -->%s<--", __LINE__, arr);
+#endif
+    }
+        /* pattern is too long */
+    else
+    {
+        *exit_code = LEN_UNSUPCMD_ERR;
+        CHECK_EXIT_CODE
+    }
+}
+
+void extract_nums(cl_t *cl,char n_extr_nums[PTRNLEN], int *exit_code)
+{
+    char *token = NULL;
+    char *ptr = NULL;
+    int nums[5] = {0}; /* to return an error code if smething like [a,a,a,a,a,a,a] will be entered */
+    int i = 0;
+    cl->cmds[cl->cmds_c].iscolsel = false;
+
+    /* get the first token */
+    token = strtok(n_extr_nums, ",");
+
+    /* walk through other tokens */
+    for( ; i < 5 && token != NULL; i++)
+    {
+        /* add a number to an array */
+        nums[i] = (int)(strtol(token, &ptr, 10));
+        if(nums[i] <= 0 || ptr[0] != 0)
+        {
+            *exit_code = VAL_UNSUPCMD_ERR;
+            CHECK_EXIT_CODE
+        }
+        /* check whethe the number represents row or column and change structure */
+        if(i == 0)
+        {
+            cl->cmds[cl->cmds_c].row_1 = (cl->cmds[cl->cmds_c].row_2 = nums[i]);
+        }
+        else if(i == 1)
+        {
+            cl->cmds[cl->cmds_c].col_1 = (cl->cmds[cl->cmds_c].col_2 = nums[i]);
+        }
+        else
+        {
+            *exit_code = VAL_UNSUPARG_ERR;
+        }
+        token = strtok(NULL, ",");
+    }
+
+    cl->cmds[cl->cmds_c].col_1 = cl->cmds[cl->cmds_c].col_2;
+
+#ifdef SELECT
+    printf("\nEXTRACT_NUMS\n(%d) extracted selection: [%d,%d,%d,%d]\n", __LINE__, nums[0], nums[1], nums[2], nums[3]);
+#endif
+    CHECK_EXIT_CODE
+}
+
 /**
  *
  * @param cmd
@@ -1330,64 +1386,63 @@ void process_table(cl_t *cl, tab_t *t, int *exit_code)
  * @param t
  * @param exit_code
  */
-void init_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
+void init_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
 {
+    /* create an array for the part of command after whitespace */
+    char n_extr_nums[PTRNLEN] = {0};
 
+    /* add a command to the structure  */
 
-    // set STR - nastaví hodnotu buňky na řetězec STR.
-    // Řetězec STR může být ohraničen uvozovkami a může obsahovat speciální znaky uvozené lomítkem (viz formát tabulky)
-
-    //swap [R,C] - vymění obsah vybrané buňky s buňkou na řádku R a sloupci C
-
-    //sum [R,C] - do buňky na řádku R a sloupci C uloží součet hodnot vybraných buněk (odpovídající formátu %g u printf).
-    //  Vybrané buňky neobsahující číslo budou ignorovány (jako by vybrány nebyly).
-
-    //avg    [R,C] - stejné jako sum, ale ukládá se aritmetický průměr z vybraných buněk
-    //count  [R,C] - stejné jako sum, ale ukládá se počet neprázdných buněk z vybraných buněk
-    //len    [R,C] - do buňky na řádku R a sloupci C uloží délku řetězce aktuálně vybrané buňky
-
-
-    /* command is "find" */
+    /* commands use a string as an argument */
+    /* The string STR can be enclosed in quotation marks and can contain special characters preceded by a slash */
     if(!strncmp("find ", cmd->elems_v, strlen("find ")))
     {
         cl->cmds[cl->cmds_c].proc_opt = FIND;
-        cl->cmds[cl->cmds_c].cmd_opt  = SEL;
-
-        if(strlen(cmd->elems_v + strlen("find ")) < PTRNLEN)
-        {
-            /* write a pattern to the structure */
-            memcpy(cl->cmds[cl->cmds_c].pttrn, cmd->elems_v + strlen("find "), strlen(cmd->elems_v + strlen("find ")));
-#ifdef CMDS
-            printf("\nINIT_WSPASED_CMD\n%d pattern -->%s<--", __LINE__, cl->cmds[cl->cmds_c].pttrn);
-#endif
-        }
-
-        /* pattern is too long */
-        else
-        {
-            *exit_code = LEN_UNSUPCMD_ERR;
-            CHECK_EXIT_CODE
-        }
+        cl->cmds[cl->cmds_c].cmd_opt = SEL;
+        add_ptrn(cmd, cl->cmds[cl->cmds_c].pttrn, "set ", exit_code);
+        CHECK_EXIT_CODE
     }
-
     else if(!strncmp("set ", cmd->elems_v, strlen("set ")))
     {
         cl->cmds[cl->cmds_c].proc_opt = SET;
         cl->cmds[cl->cmds_c].cmd_opt = PRC;
-        if(strlen(cmd->elems_v + strlen("set ")) < PTRNLEN)
-        {
-            /* write a pattern to the structure */
-            memcpy(cl->cmds[cl->cmds_c].pttrn, cmd->elems_v + strlen("set "), strlen(cmd->elems_v + strlen("set ")));
-#ifdef CMDS
-            printf("\nINIT_WSPASED_CMD\n%d pattern -->%s<--", __LINE__, cl->cmds[cl->cmds_c].pttrn);
-#endif
-        }
+        add_ptrn(cmd, cl->cmds[cl->cmds_c].pttrn, "set ", exit_code);
+        CHECK_EXIT_CODE
+    }
 
-        /* pattern is too long */
-        else
+    /* commands use a cell as an argument */
+    else if(!strncmp("swap ", cmd->elems_v, strlen("swap ")))
+    {
+        cl->cmds[cl->cmds_c].proc_opt = SWAP;
+        add_ptrn(cmd, n_extr_nums, "swap ", exit_code);
+    }
+    else if(!strncmp("sum ", cmd->elems_v, strlen("sum ")))
+    {
+        cl->cmds[cl->cmds_c].proc_opt = SUM;
+        add_ptrn(cmd, n_extr_nums, "swap ", exit_code);
+    }
+    else if(!strncmp("avg ", cmd->elems_v, strlen("avg ")))
+    {
+        cl->cmds[cl->cmds_c].proc_opt = AVG;
+        add_ptrn(cmd, n_extr_nums, "swap ", exit_code);
+    }
+    else if(!strncmp("count ", cmd->elems_v, strlen("count ")))
+    {
+        cl->cmds[cl->cmds_c].proc_opt = COUNT;
+        add_ptrn(cmd, n_extr_nums, "swap ", exit_code);
+    }
+    else if(!strncmp("len ", cmd->elems_v, strlen("len ")))
+    {
+        cl->cmds[cl->cmds_c].proc_opt = LEN;
+        add_ptrn(cmd, n_extr_nums, "swap ", exit_code);
+    }
+
+    if(cl->cmds[cl->cmds_c].proc_opt >= SET && cl->cmds[cl->cmds_c].proc_opt <= LEN)
+    {
+        cl->cmds[cl->cmds_c].cmd_opt = PRC;
+        if(cl->cmds[cl->cmds_c].proc_opt != SET)
         {
-            *exit_code = LEN_UNSUPCMD_ERR;
-            CHECK_EXIT_CODE
+            extract_nums(cl, n_extr_nums, exit_code);
         }
     }
 }
@@ -1405,7 +1460,7 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
 void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
 {
     /* number of occurances */
-    char *currcom = (char*)calloc(cmd->elems_c, sizeof(char));
+    char *currcom = (char *)calloc(cmd->elems_c, sizeof(char));
     CHECK_ALLOC_ERR(currcom)
 
     if(!strcmp(cmd->elems_v, "irow"))
@@ -1431,8 +1486,9 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
         // изменить паттерн и вставить во все выбранные клетки какой-то стринг
         // set_f
     }// TODO разберись в set
-    /* revert back the selection that was before the temporary selection was applied */
-    else if(!strcmp(cmd->elems_v, "_")){cl->currsel = cl->buf_sel;}
+        /* revert back the selection that was before the temporary selection was applied */
+    else if(!strcmp(cmd->elems_v, "_"))
+    {cl->currsel = cl->buf_sel;}
 
         /* if there's a selection cmd sets a new current selection */
     else
@@ -1451,8 +1507,7 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
     if(cl->cmds[cl->cmds_c].proc_opt >= MIN && cl->cmds[cl->cmds_c].proc_opt <= MAX)
     {
         cl->cmds[cl->cmds_c].cmd_opt = SEL;
-    }
-    else if(cl->cmds[cl->cmds_c].proc_opt >= MIN && cl->cmds[cl->cmds_c].proc_opt <= DCOL)
+    } else if(cl->cmds[cl->cmds_c].proc_opt >= MIN && cl->cmds[cl->cmds_c].proc_opt <= DCOL)
     {
         cl->cmds[cl->cmds_c].cmd_opt = PRC; /* now cmd option is processing the data */
     }
@@ -1461,9 +1516,12 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
     CHECK_EXIT_CODE
 }
 
+
+// TODO add Escape seq as soon as SMrcka answers
+/* writes a character to the command if this character is not square brackets or semicolon */
 void a_ch_cmd(carr_t *cmd, char item, bool quoted, int *exit_code)
 {
-    if(item == '[' || item == ']' || item == ';') //TODO change me to a function
+    if(item == '[' || item == ']' || item == ';')
     {
         if(quoted)
         {a_carr(cmd, item, exit_code);}
@@ -1473,7 +1531,7 @@ void a_ch_cmd(carr_t *cmd, char item, bool quoted, int *exit_code)
     {a_carr(cmd, item, exit_code);}
 }
 
-//TODO написать документацию, // FIXME хзхз
+/* increase the number of given commands, clear the line where the previous command was */
 void prep_for_next_cmd(carr_t *cmd, int *cmds_c, const int *pos, const int *arglen)
 {
     /* move to the next cmd */
@@ -1550,7 +1608,7 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
         init_n_wspased_cmd(cmd, cl, t, exit_code);
     } else /* init and call data processing functions or process temp variables */
     {
-        init_wspased_cmd(cmd, cl, t, exit_code);
+        init_wspased_cmd(cmd, cl, exit_code);
     }
     CHECK_EXIT_CODE
 }
@@ -1564,7 +1622,7 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
  * @param src a cmdline argument
  * @param exit_code can be changed if the error occured
  */
-void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code) 
+void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
 {
 #ifdef CMDS
     printf("\n\n(%d) init_cmds: \n", __LINE__);
@@ -1575,18 +1633,13 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
 
     /* firsst cell selection command is on the position 0,
      * also it is neccesarry to init cmds count */
-    cl->cellsel = 0;
-    cl->currsel = 0;
-    cl->cmds_c = 0;
+    cl->cellsel = (cl->cmds_c = 0);
+
+    /* set a selection to the first cell(by default) */
+    set_sel(cl, t, 1, 1, 1, 1, exit_code);
 
     /* current command(0) is a selection */
     cl->cmds[cl->cmds_c].cmd_opt = SEL;
-
-    /* set a selection to the first cell(by default) */
-    cl->cmds[cl->cellsel].row_1 = 1;
-    cl->cmds[cl->cellsel].col_1 = 1;
-    cl->cmds[cl->cellsel].row_2 = 1;
-    cl->cmds[cl->cellsel].col_2 = 1;
     cl->cmds[cl->cellsel].iscolsel = true;
 
     /* first cmd is a 1 1(default) selection  */
@@ -1602,7 +1655,7 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
         }
 
             /* if the end of the argument reached */
-        else if((arg[p] == ';' && !quoted) || p == arglen - 1)// FIXME
+        else if((arg[p] == ';' && !quoted) || p == arglen - 1)
         {
             if(p == arglen - 1 || arg[p] != ';')
             {
@@ -1621,9 +1674,21 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
             printf("(%d) prepared: next cmd(%d), arglen(%d), pos(%d)\n", __LINE__, cl->cmds_c, arglen, p);
 #endif
         }
-        /* add a char to the cmd arr */
-        a_ch_cmd(cmd, arg[p], quoted, exit_code);
-        CHECK_EXIT_CODE
+        else if(arg[p] == '\\') //TODO deleteme
+        {
+            if(arg[p+1] == '\\')//TODO ESCAPE SEQUENCE. dont add escape seq?? or what
+            {
+                *exit_code = VAL_UNSUPARG_ERR;
+            }
+            //a_ch_cmd(cmd, arg[p], quoted, exit_code);
+        }
+        /* just add a character to an array with the command */
+        else
+        {
+            /* add a char to the cmd arr */
+            a_ch_cmd(cmd, arg[p], quoted, exit_code);
+            CHECK_EXIT_CODE
+        }
 
     }
 }
@@ -1757,9 +1822,7 @@ int run_program(const int argc, const char **argv)
     parse_cl_proc_tab(&argc, argv, &t, &cl, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
-    /* trim table before printing */ // TODO добавить арг final, который значит, что надо все подровнять
-    //table_trim(&t, &exit_code);
-    //expand_tab(&cl, &t, &exit_code);
+    /* trim table before printing */ //
     table_trim_bef_printing(&t, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
