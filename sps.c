@@ -8,6 +8,7 @@
 /* TODO make possible to quote a quotation mark if neccessarry
  *  change get_row(), delete get_cell()
  * */
+// TODO обработать ESCAPE SEQUENCE init_cmds, get_row
 
 //region includes
 #include <stdio.h>
@@ -85,7 +86,7 @@ enum argpos
 
 typedef enum
 {
-    NOPROC,
+    NOTH,
     SET, FIND,
     MIN, MAX, CLEAR,
     IROW, AROW, DROW, ICOL, ACOL, DCOL
@@ -136,6 +137,7 @@ typedef struct
     cmd_t cmds[1001]; /* array with all cmds(for functions goto etc) */
     int currsel;      /* index of the current selectinon */
     int cellsel;      /* index of the current cell seleciton */
+    int buf_sel;
     int cmds_c;       /* number of entered cmds. Represents a position of a current cmd */
 
     int tmpsel[NOF_TMP_SELS]; /* array with ppositions of temp selections */
@@ -290,6 +292,138 @@ void clear_data(tab_t *t, cl_t *cl)
 }
 //endregion
 
+//region ARRAYS WITH CHARS FUNCS
+
+void iscellnum(carr_t *cell)
+{
+    char *junk;
+    cell->isnum = true;
+    strtod(cell->elems_v, &junk);
+
+    if(junk[0])
+        cell->isnum = false;
+}
+
+
+/**
+ * Copies string src to string string cmd
+ *
+ * @param array of chars to copy to
+ * @param array of chars to copy from
+ * @return false If len of cmd < len of src
+ *         true if copied succesfully
+ */
+bool strcop(char *cmd, char *src)
+{
+    int cmdlen = (int)strlen(cmd);
+    if(cmdlen < (int)strlen(src))
+    {
+        return false;
+    }
+
+    int i = 0;
+    while(i < cmdlen)
+    {
+        cmd[i] = src[i];
+        i++;
+    }
+    return true;
+}
+
+/**
+ *  Adds a character to an array.
+ *  If there is no more memory in the array allocate new memory
+ *
+ * @param arr        dynamically allocated array.
+ * @param item       an item to add to an array
+ * @param exit_code  can be changed if array reallocated unsuccesfully
+ */
+void a_carr(carr_t *arr, const char item, int *exit_code)
+{
+    /* if there is no more space for the new element add new space */
+    if(arr->elems_c + 1 >= arr->len)
+    {
+        arr->len += MEMBLOCK;
+        arr->elems_v = (char *)realloc(arr->elems_v, arr->len * sizeof(char));
+        CHECK_ALLOC_ERR(arr->elems_v)
+    }
+    arr->isempty = false;
+    arr->elems_v[arr->elems_c++] = item;
+    arr->elems_v[arr->elems_c] = 0; /* add terminating 0 */
+}
+
+/**
+ * String beginswith string
+ * @param str
+ * @param ptrn
+ * @return false if pattern is longer than str
+ *            or first strlen(ptrn) chars aren't equal to str
+ *          true if string begins with ptrn
+ */
+bool strbstr(char *str, char *ptrn)
+{
+    int ptrnl = (int)strlen(ptrn);
+    if(ptrnl > (int)strlen(str))
+    {
+        return false;
+    } else
+    {
+        int i = 0;
+        while(i < ptrnl)
+        {
+            if(str[i] != ptrn[i])
+                return false;
+            i++;
+        }
+        return true;
+    }
+}
+
+/**
+ *  Adds an item to an array if this item is not represented in the array
+ *
+ * @param set An array where to add an item
+ * @param size Size of an array where to add an item. If item is adds size will be increased
+ * @param item A character to add to an array
+ * @param exit_code Exit code is changed only if the error while allocating memory has been occurred
+ *
+ * @return
+ *         true, if item has been added to an array
+ *         false, if item is already in the array or if error while allocating memory has been occurred
+ */
+void set_add_item(carr_t *set, char item, int *exit_code)
+{
+    if(strchr(set->elems_v, item) == NULL)
+    {
+        a_carr(set, item, exit_code);
+        CHECK_EXIT_CODE
+    }
+}
+
+///** TODO deleteme
+// * Returns the number of occurancef of the given char in the given array
+// *
+// * @param arr
+// * @param charchar
+// * @return
+// *//*
+//int stroc(char *str, char charchar)
+//{
+//    int n = 0;
+//    int i = 0;
+//    int slen = (int)strlen(str);
+//    while(i < slen)
+//    {
+//        if(charchar == str[i])
+//            n++;
+//        i++;
+//    }
+//    return n;
+//}*/
+
+
+//endregion
+
 //region CONSTRUCTORS
 /* */
 void carr_clear(carr_t *carr)
@@ -358,141 +492,6 @@ void table_ctor(tab_t *t, int rows, int cols, int *exit_code)
 }
 //endregion
 
-//region ARRAYS WITH CHARS FUNCS
-
-void iscellnum(carr_t *cell)
-{
-    char *junk;
-    cell->isnum = true;
-    strtod(cell->elems_v, &junk);
-
-    if(junk[0])
-        cell->isnum = false;
-}
-
-/**
- * Copies string src to string string cmd
- *
- * @param array of chars to copy to
- * @param array of chars to copy from
- * @return false If len of cmd < len of src
- *         true if copied succesfully
- */
-bool strcop(char *cmd, char *src)
-{
-    int cmdlen = (int)strlen(cmd);
-    if(cmdlen < (int)strlen(src))
-    {
-#ifdef CMDS
-        printf("(%d) cmd_len(%d) != srclen(%d) for cmd=\"%s\",  src=\"%s\"\n", __LINE__, cmdlen, (int)strlen(src), cmd,
-               src);
-#endif
-        return false;
-    }
-
-    int i = 0;
-    while(i < cmdlen)
-    {
-        cmd[i] = src[i];
-        i++;
-    }
-    return true;
-}
-
-/**
- * String beginswith string
- * @param str
- * @param ptrn
- * @return false if pattern is longer than str
- *            or first strlen(ptrn) chars aren't equal to str
- *          true if string begins with ptrn
- */
-bool strbstr(char *str, char *ptrn)
-{
-    int ptrnl = (int)strlen(ptrn);
-    if(ptrnl > (int)strlen(str))
-    {
-        return false;
-    } else
-    {
-        int i = 0;
-        while(i < ptrnl)
-        {
-            if(str[i] != ptrn[i])
-                return false;
-            i++;
-        }
-        return true;
-    }
-}
-
-/**
- *  Adds a character to an array.
- *  If there is no more memory in the array allocate new memory
- *
- * @param arr        dynamically allocated array.
- * @param item       an item to add to an array
- * @param exit_code  can be changed if array reallocated unsuccesfully
- */
-void a_carr(carr_t *arr, const char item, int *exit_code)
-{
-    /* if there is no more space for the new element add new space */
-    if(arr->elems_c + 1 >= arr->len)
-    {
-        arr->len += MEMBLOCK;
-        arr->elems_v = (char *)realloc(arr->elems_v, arr->len * sizeof(char));
-        CHECK_ALLOC_ERR(arr->elems_v)
-    }
-    arr->isempty = false;
-    arr->elems_v[arr->elems_c++] = item;
-    arr->elems_v[arr->elems_c] = 0; /* add terminating 0 */
-}
-
-/**
- *  Adds an item to an array if this item is not represented in the array
- *
- * @param set An array where to add an item
- * @param size Size of an array where to add an item. If item is adds size will be increased
- * @param item A character to add to an array
- * @param exit_code Exit code is changed only if the error while allocating memory has been occurred
- *
- * @return
- *         true, if item has been added to an array
- *         false, if item is already in the array or if error while allocating memory has been occurred
- */
-void set_add_item(carr_t *set, char item, int *exit_code)
-{
-    if(strchr(set->elems_v, item) == NULL)
-    {
-        a_carr(set, item, exit_code);
-        CHECK_EXIT_CODE
-    }
-}
-
-///** TODO deleteme
-// * Returns the number of occurancef of the given char in the given array
-// *
-// * @param arr
-// * @param charchar
-// * @return
-// *//*
-//int stroc(char *str, char charchar)
-//{
-//    int n = 0;
-//    int i = 0;
-//    int slen = (int)strlen(str);
-//    while(i < slen)
-//    {
-//        if(charchar == str[i])
-//            n++;
-//        i++;
-//    }
-//    return n;
-//}*/
-
-
-//endregion
-
 //region TABLE RESIZE
 
 /**
@@ -504,6 +503,8 @@ void set_add_item(carr_t *set, char item, int *exit_code)
  */
 void expand_tab(cl_t *cl, tab_t *t, int *exit_code) // FIXME
 {
+    t->deleted = false;
+
     /* expand_rows */
     if(cl->cmds[cl->currsel].row_2 - 1 > t->row_c)
     {
@@ -972,9 +973,92 @@ void get_table(const int *argc, const char **argv, tab_t *t, cl_t *cl, int *exit
 
 //region functions
 
-void find_f(cl_t *cl, tab_t *t)// TODO
+void min_max_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
 {
-    return;
+
+    /* start */
+    int r = cl->cmds[cl->currsel].row_1 - 1;
+    int c = cl->cmds[cl->currsel].col_1 - 1;
+
+    int targ_row = -1, targ_col = -1;
+    float mval = 0, mtempval = 0;
+    bool found = false;
+#ifdef CMDS
+    printf("\nMIN_MAX\n%d  lower row = %d  roght col = %d\n", __LINE__, cl->cmds[cl->currsel].row_2,
+           cl->cmds[cl->currsel].col_2);
+#endif
+
+    /* walk through all selected rows */
+    for(; r < cl->cmds[cl->currsel].row_2; r++)
+    {
+        /* walk through all selected columns */
+        for(; c < cl->cmds[cl->currsel].col_2; c++)
+        {
+            /* if there is a number in the column */
+            if(t->rows_v[r].cols_v[c].isnum)
+            {
+                if(!found)
+                {
+                    found = true;
+                    mval = atof(t->rows_v[r].cols_v[c].elems_v);
+                    targ_row = r, targ_col = c;
+                }
+                if(opt == MAX)
+                {
+                    mtempval = atof(t->rows_v[r].cols_v[c].elems_v);
+                    if(mtempval > mval)
+                    {
+                        mval = mtempval;
+                        targ_row = r;
+                        targ_col = c;
+                    }
+                } else if(opt == MIN)
+                {
+                    mtempval = atof(t->rows_v[r].cols_v[c].elems_v);
+                    if(mtempval < mval)
+                    {
+                        mval = mtempval;
+                        targ_row = r;
+                        targ_col = c;
+                    }
+                } else return;
+            }
+        }
+    }
+    
+    /* if targ_row and targ_col havn't been changed that means there is no cell in the selection with a number in it */
+    if(targ_row != -1 && targ_col != -1)
+    {
+        cl->cellsel = cl->cmds_c;
+        set_sel(cl, t, targ_row + 1, targ_col + 1, targ_row + 1, targ_col + 1, exit_code);
+    }
+}
+
+void find_f(cl_t *cl, tab_t *t, int *exit_code)// TODO
+{
+#ifdef CMDS
+    printf("\nFIND_F\n%d HERE WE ARE \n",__LINE__);
+#endif
+    int r = cl->cmds[cl->currsel].row_1 - 1;
+    int c = cl->cmds[cl->currsel].col_1 - 1;
+
+    /* walk through all selected rows and columns */
+    for( ; r < cl->cmds[cl->currsel].row_2; r++)
+    {
+        for( ; c < cl->cmds[cl->currsel].col_2; c++)
+        {
+            if(!strcmp(t->rows_v[r].cols_v[c].elems_v, cl->cmds[cl->cmds_c].pttrn))
+            {
+                cl->cellsel = cl->cmds_c;
+                set_sel(cl, t, r + 1, c + 1, r + 1, c + 1, exit_code);
+#ifdef CMDS
+                printf("%d pattern %s found, sel havе been changed to [%d,%d,%d,%d]\n", __LINE__, cl->cmds[cl->cmds_c]
+                        .pttrn, r+1, c+1, r+1, c+1);
+#endif
+                return;
+            }
+        }
+    }
 }
 
 void clear_f(cl_t *cl, tab_t *t)
@@ -1028,8 +1112,7 @@ void drow_f(cl_t *cl, tab_t *t, int *exit_code) // TODO
     {
         t->deleted = true;
     }
-    else
-    {
+
         if(from > t->len)
         {
             to = t->len;
@@ -1063,10 +1146,11 @@ void drow_f(cl_t *cl, tab_t *t, int *exit_code) // TODO
         t->row_c -= diff;
         t->len -= diff;
 
+#ifdef CMDS
+        printf("\nDROW\n%d   t->row_c %d   t->len %d\n", __LINE__, t->row_c, t->len);
+#endif
         /* re-allocate memory */
         t->rows_v = (row_t *)realloc(t->rows_v, t->len * sizeof(row_t));
-        CHECK_ALLOC_ERR(t->rows_v)
-    }
 }
 
 
@@ -1114,64 +1198,6 @@ void icol_acol_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
 
 
 /* in an existing selection, it finds the cell with the min/max numeric value and sets the selection to it */
-void min_max_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
-{
-
-    /* start */
-    int r = cl->cmds[cl->currsel].row_1 - 1;
-    int c = cl->cmds[cl->currsel].col_1 - 1;
-
-    int targ_row = -1, targ_col = -1;
-    float mval = 0, mtempval = 0;
-    bool found = false;
-
-    printf("\nMIN_MAX\n%d  lower row = %d  roght col = %d\n", __LINE__, cl->cmds[cl->currsel].row_2,
-           cl->cmds[cl->currsel].col_2);
-
-    /* walk through all selected rows */
-    for(; r < cl->cmds[cl->currsel].row_2; r++)
-    {
-        /* walk through all selected columns */
-        for(; c < cl->cmds[cl->currsel].col_2; c++)
-        {
-            /* if there is a number in the column */
-            if(t->rows_v[r].cols_v[c].isnum)
-            {
-                if(!found)
-                {
-                    found = true;
-                    mval = atof(t->rows_v[r].cols_v[c].elems_v);
-                    targ_row = r, targ_col = c;
-                }
-                if(opt == MAX)
-                {
-                    mtempval = atof(t->rows_v[r].cols_v[c].elems_v);
-                    if(mtempval > mval)
-                    {
-                        mval = mtempval;
-                        targ_row = r;
-                        targ_col = c;
-                    }
-                } else if(opt == MIN)
-                {
-                    mtempval = atof(t->rows_v[r].cols_v[c].elems_v);
-                    if(mtempval < mval)
-                    {
-                        mval = mtempval;
-                        targ_row = r;
-                        targ_col = c;
-                    }
-                } else return;
-            }
-        }
-    }
-    if(targ_row != -1 && targ_col != -1)
-    {
-        cl->cellsel = cl->cmds_c;
-        set_sel(cl, t, targ_row + 1, targ_col + 1, targ_row + 1, targ_col + 1, exit_code);
-    }
-}
-
 void dcol_f(cl_t *cl, tab_t *t, int *exit_code)
 {
     /* Tn the first option, a whole row is about to be deleted */
@@ -1244,14 +1270,7 @@ void process_table(cl_t *cl, tab_t *t, int *exit_code)
     printf("(%d)opt %s for cmd_c %d\n\n ", __LINE__, print_opt(cl->cmds[cl->cmds_c].proc_opt), cl->cmds_c);
 #endif
 
-    if(cl->cmds[cl->cmds_c].proc_opt == FIND)
-    {find_f(cl, t);}
-
-        /* set column in range of the selection by numerical value */
-    else if(cl->cmds[cl->cmds_c].proc_opt == MIN || cl->cmds[cl->cmds_c].proc_opt == MAX)
-    {min_max_f(cl, t, exit_code, cl->cmds[cl->cmds_c].proc_opt);}
-
-    else if(cl->cmds[cl->cmds_c].proc_opt == AROW || cl->cmds[cl->cmds_c].proc_opt == IROW)
+    if(cl->cmds[cl->cmds_c].proc_opt == AROW || cl->cmds[cl->cmds_c].proc_opt == IROW)
     {irow_arow_f(cl, t, exit_code, cl->cmds[cl->cmds_c].proc_opt);}
 
     else if(cl->cmds[cl->cmds_c].proc_opt == DROW)
@@ -1280,21 +1299,40 @@ void process_table(cl_t *cl, tab_t *t, int *exit_code)
  */
 void init_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
 {
+    // [find STR] - v již existujícím výběru buněk vybere první buňku, jejíž hodnota obsahuje podřetězec STR.
 
-    return;
-    if(strbstr(cmd->elems_v, "[find "))
+    // set STR - nastaví hodnotu buňky na řetězec STR.
+    // Řetězec STR může být ohraničen uvozovkami a může obsahovat speciální znaky uvozené lomítkem (viz formát tabulky)
+
+    //swap [R,C] - vymění obsah vybrané buňky s buňkou na řádku R a sloupci C
+
+    //sum [R,C] - do buňky na řádku R a sloupci C uloží součet hodnot vybraných buněk (odpovídající formátu %g u printf).
+    //  Vybrané buňky neobsahující číslo budou ignorovány (jako by vybrány nebyly).
+
+    //avg    [R,C] - stejné jako sum, ale ukládá se aritmetický průměr z vybraných buněk
+    //count  [R,C] - stejné jako sum, ale ukládá se počet neprázdných buněk z vybraných buněk
+    //len    [R,C] - do buňky na řádku R a sloupci C uloží délku řetězce aktuálně vybrané buňky
+
+    if(strbstr(cmd->elems_v, "find "))
     {
+        cl->cmds[cl->cmds_c].proc_opt = FIND;
+        cl->cmds[cl->cmds_c].cmd_opt  = SEL;
 
-        /* if cmd is FIND and a pattern is too long */
-        if(!strcop(cl->cmds[cl->cmds_c].pttrn, cmd->elems_v))
+        if(strlen(cmd->elems_v + strlen("find ")) < PTRNLEN)
+        {
+            /* write a pattern to the structure */
+            memcpy(cl->cmds[cl->cmds_c].pttrn, cmd->elems_v + strlen("find "), strlen(cmd->elems_v + strlen("find ")));
+#ifdef CMDS
+            printf("\nINIT_WSPASED_CMD\n%d pattern -->%s<--", __LINE__, cl->cmds[cl->cmds_c].pttrn);
+#endif
+        }
+
+        /* pattern is too long */
+        else
         {
             *exit_code = LEN_UNSUPCMD_ERR;
-            error_line_global = __LINE__;
+            CHECK_EXIT_CODE
         }
-#ifdef SELECT
-        printf("(%d) cmd find, pattern \"%s\"\n", __LINE__, cl->cmds[cl->cmds_c].pttrn);
-#endif
-        return;
     }
 }
 
@@ -1311,9 +1349,8 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
 void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
 {
     /* number of occurances */
-    char *currcom = calloc(cmd->elems_c, sizeof(char));
+    char *currcom = (char*)calloc(cmd->elems_c, sizeof(char));
     CHECK_ALLOC_ERR(currcom)
-
 
     if(!strcmp(cmd->elems_v, "irow"))
     {cl->cmds[cl->cmds_c].proc_opt = IROW;}
@@ -1335,23 +1372,22 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
     {cl->cmds[cl->cmds_c].proc_opt = MAX;}
     else if(!strcmp(cmd->elems_v, "set"))
     {cl->cmds[cl->cmds_c].proc_opt = SET;}// TODO разберись в set
-    else if(!strcmp(cmd->elems_v, "_")) // TODO обновит выбор с временной переменной
-    {
-        printf("%d _", __LINE__);
-    } // TODO refresh selection from temp var
+    /* revert back the selection that was before the temporary selection was applied */
+    else if(!strcmp(cmd->elems_v, "_")){cl->currsel = cl->buf_sel;}
 
         /* if there's a selection cmd sets a new current selection */
     else
     {
         get_nums(cmd, cl, t, exit_code);
         cl->cmds[cl->cmds_c].cmd_opt = SEL;
-        cl->cmds[cl->cmds_c].proc_opt = NOPROC;
+        cl->cmds[cl->cmds_c].proc_opt = NOTH;
+#ifdef SELECT
         printf("\nINIT_N_WSPASED_CMDS\n%d  sel [%d,%d,%d,%d]\n", __LINE__,
                cl->cmds[cl->cmds_c].row_1,
                cl->cmds[cl->cmds_c].col_1,
                cl->cmds[cl->cmds_c].row_2,
                cl->cmds[cl->cmds_c].col_2);
-
+#endif
     }
 
     if(cl->cmds[cl->cmds_c].proc_opt >= MIN && cl->cmds[cl->cmds_c].proc_opt <= DCOL)
@@ -1394,15 +1430,20 @@ void process_cmd(cl_t *cl, tab_t *t, int *exit_code)
     printf("\nPROCESS_CMD \n(%d)command opt = %s \n",
            __LINE__, print_cmd_opt(cl->cmds[cl->cmds_c].cmd_opt));
 #endif
+    /* expand tab to fit the selection */
+    expand_tab(cl, t, exit_code);
+
     switch(cl->cmds[cl->cmds_c].cmd_opt)
     {
         case SEL: /* selection is already set in the functinon */
+            if(cl->cmds[cl->cmds_c].proc_opt == FIND)
+            {find_f(cl, t, exit_code);}
 
-            /* expand tab to fit the selection */
-            expand_tab(cl, t, exit_code);
-
+                /* set column in range of the selection by numerical value */
+            else if(cl->cmds[cl->cmds_c].proc_opt == MIN || cl->cmds[cl->cmds_c].proc_opt == MAX)
+            {min_max_f(cl, t, exit_code, cl->cmds[cl->cmds_c].proc_opt);}
 #ifdef CMDS
-            printf("(%d) cursel: [%d,%d,%d,%d]\n", __LINE__, cl->cmds[cl->currsel].row_1,
+            printf("\n(%d) cursel: [%d,%d,%d,%d]\n", __LINE__, cl->cmds[cl->currsel].row_1,
                    cl->cmds[cl->currsel].col_1,
                    cl->cmds[cl->currsel].row_2,
                    cl->cmds[cl->currsel].col_2
@@ -1429,7 +1470,7 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
     cl->cmds[cl->cmds_c].row_2 = 0;
     cl->cmds[cl->cmds_c].col_2 = 0;
     cl->cmds[cl->cmds_c].cmd_opt = NOPT;
-    cl->cmds[cl->cmds_c].proc_opt = NOPROC;
+    cl->cmds[cl->cmds_c].proc_opt = NOTH;
     memset(cl->cmds[cl->cmds_c].pttrn, 0, PTRNLEN);
     cl->cmds[cl->cmds_c].isset = false;
     cl->cmds[cl->cmds_c].iscolsel = false;
@@ -1461,7 +1502,7 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
  * @param src a cmdline argument
  * @param exit_code can be changed if the error occured
  */
-void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
+void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code) 
 {
 #ifdef CMDS
     printf("\n\n(%d) init_cmds: \n", __LINE__);
