@@ -952,20 +952,43 @@ void sum_f(cl_t *cl, tab_t *t, int *exit_code)
 /**
  * swap [R,C] - swaps the contents of the selected cell with the cell from the last cell selection
  */
-void swap_f(cl_t *cl, tab_t *t, int *exit_code)
+void swap_f(cl_t *cl, tab_t *t)
 {
-    /**/
-    int r = cl->cmds[cl->cellsel].row_1;
-    int c = cl->cmds[cl->cellsel].col_1;
+    /* create macros to use less mempry and to make the code more readable */
+#define r cl->cmds[cl->cellsel].row_1 - 1
+#define c cl->cmds[cl->cellsel].col_1 - 1
+#define r1 cl->cmds[cl->cmds_c].row_1 - 1
+#define c1 cl->cmds[cl->cmds_c].col_1 - 1
 
-    int r1 = cl->cmds[cl->cmds_c].col_1;
-    int c1 = cl->cmds[cl->cmds_c].col_1;
-
-    char *temp = t->rows_v[r].cols_v[c].elems_v;
 #ifdef CMDS
-    printf("\nSWAP\n%d  tmp -->%s<--\n",__LINE__, temp);
+    printf("\nSWAP_F\n%d bef %d %d | %d %d\n",__LINE__, t->rows_v[r].cols_v[c].len, t->rows_v[r].cols_v[c].elems_c,
+           t->rows_v[r1].cols_v[c1].len, t->rows_v[r1].cols_v[c1].elems_c);
 #endif
 
+    /* */
+    char *tmp = t->rows_v[r].cols_v[c].elems_v;
+    int tempum = t->rows_v[r].cols_v[c].len;
+    //int elems_c = t->rows_v[r].cols_v[c].elems_c;
+
+    /* copy 2nd row to the first row */
+    t->rows_v[r].cols_v[c].elems_v = t->rows_v[r1].cols_v[c1].elems_v;
+    t->rows_v[r].cols_v[c].len     = t->rows_v[r1].cols_v[c1].len;
+    t->rows_v[r1].cols_v[c1].len = tempum;
+    tempum = t->rows_v[r].cols_v[c].elems_c;
+    t->rows_v[r].cols_v[c].elems_c = t->rows_v[r1].cols_v[c1].elems_c;
+    t->rows_v[r1].cols_v[c1].elems_c = tempum;
+
+    t->rows_v[r1].cols_v[c1].elems_v = tmp;
+
+#ifdef CMDS
+    printf("%d aft %d %d | %d %d\n", __LINE__, t->rows_v[r].cols_v[c].len, t->rows_v[r].cols_v[c].elems_c,
+           t->rows_v[r1].cols_v[c1].len, t->rows_v[r1].cols_v[c1].elems_c);
+#endif
+
+#undef c1
+#undef r1
+#undef c
+#undef r
 }
 
 
@@ -1306,7 +1329,7 @@ void process_table(cl_t *cl, tab_t *t, int *exit_code)
     {sum_f(cl, t, exit_code);}
 
     else if(cl->cmds[cl->cmds_c].proc_opt == SWAP)
-    {swap_f(cl, t, exit_code);}
+    {swap_f(cl, t);}
 
 
     else if(cl->cmds[cl->cmds_c].proc_opt == SET)
