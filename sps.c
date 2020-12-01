@@ -944,6 +944,11 @@ void avg_f(cl_t *cl, tab_t *t, int *exit_code)
 
 }
 
+/**
+ * sum [R, C] - stores the sum of values of selected cells
+ * (corresponding to the format %g in printf) in the cell on row R and column C.
+ * Selected cells without a number will be ignored (as if they were not selected)
+ */
 void sum_f(cl_t *cl, tab_t *t, int *exit_code)
 {
 
