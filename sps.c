@@ -219,7 +219,7 @@ void free_table(tab_t *t)
 #ifdef SHOWFREE
         printf("(%d) row %d of len %d with %d col_c: \n",__LINE__, row, t->rows_v[row].len, t->rows_v[row].cols_c);
 #endif
-        for(int col = t->col_c; col >= 0; col--) // FIXME (1) + 1
+        for(int col = t->col_c; col >= 0; col--) // FIXME (1) - 1
         {
 #ifdef SHOWFREE
             printf(" %d", col);
@@ -611,14 +611,13 @@ int find_max_unemp(tab_t *t)
 // TODO documentation
 void table_trim_bef_printing(tab_t *t, int *exit_code)
 {
-    int max_unemp = find_max_unemp(t);
-#ifdef TRIM
-#endif
+    int max_unempt = find_max_unemp(t);
+
     for(int r = 0; r < t->len; r++)
     {
-        row_trim(&t->rows_v[r], max_unemp, exit_code, NCOLS);
+        row_trim(&t->rows_v[r], max_unempt, exit_code, NCOLS);
     }
-    t->col_c = max_unemp - 1;
+    t->col_c = max_unempt - 1;
 }
 
 /* trims a table by reallocating rows and cols */
@@ -1096,9 +1095,43 @@ void min_max_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
 
 void dcol_f(cl_t *cl, tab_t *t, int *exit_code)
 {
-    (void)cl;
-    (void)t;
-    (void)exit_code;
+    /* Tn the first option, a whole row is deleted */
+    if(cl->cmds[cl->currsel].col_1 == 1 && cl->cmds[cl->currsel].col_2 == t->col_c + 1)
+    {
+        /* delete a * whole row */
+        drow_f(cl, t, exit_code);
+        CHECK_EXIT_CODE
+    }
+
+    /* The second option removes only some of the columns*/
+    else
+    {
+        int diff = cl->cmds[cl->currsel].col_2 - cl->cmds[cl->currsel].col_1 + 1;
+
+        /* walk through all rows that were selected */
+        for(int r = cl->cmds[cl->currsel].row_1 - 1; r < cl->cmds[cl->currsel].row_2; r++)
+        {
+            t->rows_v[r].len -= diff;
+            t->rows_v[r].cols_c -= diff;
+
+            printf("%d for row %d new len %d\n", __LINE__, r, t->rows_v[r].len);
+            for(int c = cl->cmds[cl->currsel].col_1 - 1; c <= t->rows_v[r].len; c++ )
+            {
+                printf("%d  %s is about to be vaporized...\n", __LINE__, t->rows_v[r].cols_v[c].elems_v);
+                FREE(t->rows_v[r].cols_v[c].elems_v)
+                if(c != t->rows_v[r].len)
+                    t->rows_v[r].cols_v[c] = t->rows_v[r].cols_v[c + diff];
+//                t->rows_v[r].cols_v[c].elems_v = t->rows_v[r].cols_v[c + diff].elems_v;
+//                t->rows_v[r].cols_v[c].elems_c = t->rows_v[r].cols_v[c + diff].elems_c;
+//                t->rows_v[r].cols_v[c].len     = t->rows_v[r].cols_v[c + diff].len;
+            }
+
+            /* re-allocate memory */
+            t->rows_v[r].cols_v = (carr_t*)realloc(t->rows_v[r].cols_v, t->rows_v[r].len * sizeof(carr_t));
+            CHECK_ALLOC_ERR(t->rows_v[r].cols_v)
+        }
+        table_trim_bef_printing(t, exit_code); /* trim table to prevent segfault if dcol is called multiple times... */
+    }
 }
 //endregion
 
@@ -1513,8 +1546,9 @@ int run_program(const int argc, const char **argv)
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
     /* trim table before printing */ // TODO добавить арг final, который значит, что надо все подровнять
-    table_trim_bef_printing(&t, &exit_code);
     //table_trim(&t, &exit_code);
+    //expand_tab(&cl, &t, &exit_code);
+    table_trim_bef_printing(&t, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
 
