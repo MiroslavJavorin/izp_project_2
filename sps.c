@@ -922,7 +922,6 @@ void get_row(row_t *row, cl_t *cl, int *exit_code)
 
 void get_table(const int *argc, const char **argv, tab_t *t, cl_t *cl, int *exit_code)
 {
-    //TODO check if file is not empty
     if((cl->ptr = fopen(argv[*argc - 1], "r+")) == NULL)
     {
         *exit_code = NO_SUCH_FILE_ERR;
@@ -1674,22 +1673,15 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
             printf("(%d) prepared: next cmd(%d), arglen(%d), pos(%d)\n", __LINE__, cl->cmds_c, arglen, p);
 #endif
         }
-        else if(arg[p] == '\\') //TODO deleteme
+        else if(arg[p] == '\\')
         {
-            if(arg[p+1] == '\\')//TODO ESCAPE SEQUENCE. dont add escape seq?? or what
-            {
-                *exit_code = VAL_UNSUPARG_ERR;
-            }
             //a_ch_cmd(cmd, arg[p], quoted, exit_code);
-        }
-        /* just add a character to an array with the command */
-        else
-        {
-            /* add a char to the cmd arr */
-            a_ch_cmd(cmd, arg[p], quoted, exit_code);
-            CHECK_EXIT_CODE
+            continue;
         }
 
+        /* add a character to an array with the command */
+        a_ch_cmd(cmd, arg[p], quoted, exit_code);
+        CHECK_EXIT_CODE
     }
 }
 
