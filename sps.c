@@ -22,7 +22,6 @@ int error_line_global = 0;
 
 /* checks if exit code is greater than 0, which means error has been occurred,
  * calls function that prints an error on the stderr and returns an error */
-#define CURRSEL cl->currsel
 
 #define CHECK_EXIT_CODE_IN_RUN_PROGRAM if(exit_code > 0)\
 {\
@@ -117,6 +116,7 @@ typedef struct
     opts_t proc_opt;
     char pttrn[PTRNLEN];   /* if there's a pattern in the cmd */
 
+    // TODO deletme проверь, если надо использовать и удали, ели нет
     bool isset;
     bool iscolsel;  /* shows if the current command looks like [R,C] and meand cell selection */
 } cmd_t;
@@ -214,6 +214,16 @@ char *print_opt(int c)
     {return "-acol-";}
     else if(c == DCOL)
     {return "-dcol-";}
+    else if(c == LEN)
+    {return "-len-";}
+    else if(c == AVG)
+    {return "-avg-";}
+    else if(c == SUM)
+    {return "-sum-";}
+    else if(c == COUNT)
+    {return "-count-";}
+    else if(c == SWAP)
+    {return "-swap-";}
     else return "-NaN-";
 }
 
@@ -299,32 +309,6 @@ void iscellnum(carr_t *cell)
         cell->isnum = false;
 }
 
-
-/**
- * Copies string src to string string cmd
- *
- * @param array of chars to copy to
- * @param array of chars to copy from
- * @return false If len of cmd < len of src
- *         true if copied succesfully
- */
-bool strcop(char *cmd, char *src)
-{
-    int cmdlen = (int)strlen(cmd);
-    if(cmdlen < (int)strlen(src))
-    {
-        return false;
-    }
-
-    int i = 0;
-    while(i < cmdlen)
-    {
-        cmd[i] = src[i];
-        i++;
-    }
-    return true;
-}
-
 /**
  *  Adds a character to an array.
  *  If there is no more memory in the array allocate new memory
@@ -345,33 +329,6 @@ void a_carr(carr_t *arr, const char item, int *exit_code)
     arr->isempty = false;
     arr->elems_v[arr->elems_c++] = item;
     arr->elems_v[arr->elems_c] = 0; /* add terminating 0 */
-}
-
-/**
- * String beginswith string
- * @param str
- * @param ptrn
- * @return false if pattern is longer than str
- *            or first strlen(ptrn) chars aren't equal to str
- *          true if string begins with ptrn
- */
-bool strbstr(char *str, char *ptrn)
-{
-    int ptrnl = (int)strlen(ptrn);
-    if(ptrnl > (int)strlen(str))
-    {
-        return false;
-    } else
-    {
-        int i = 0;
-        while(i < ptrnl)
-        {
-            if(str[i] != ptrn[i])
-                return false;
-            i++;
-        }
-        return true;
-    }
 }
 
 /**
@@ -719,7 +676,7 @@ void set_sel(cl_t *cl, tab_t *t, int row1, int col1, int row2, int col2, int *ex
     /* change old current selection to the new current selection */
     cl->currsel = cl->cmds_c;
 
-    printf("\nSET_SEL\n%d   [%d,%d,%d,%d]", __LINE__, row1, col1, row2, col2);
+    printf("\nSET_SEL\n%d   [%d,%d,%d,%d]\n", __LINE__, row1, col1, row2, col2);
     /* set a selection */
     cl->cmds[cl->currsel].row_1 = row1;
     cl->cmds[cl->currsel].col_1 = col1;
@@ -840,48 +797,54 @@ bool get_cell(carr_t *col, cl_t *cl, int *exit_code)
 {
     char buff_c;
     bool quoted = false;
+    bool backslashed = false;
+
     for(col->elems_c = 0; ; )
     {
-
         buff_c = (char)fgetc(cl->ptr);
-        if(buff_c == '\n' || feof(cl->ptr))
-        {
-            if(quoted) *exit_code = Q_DONT_MATCH_ERR;
-#ifdef SHOWTAB
-            printf("(%d)  \t\t\t%s\n", __LINE__, col->elems_v);
-#endif
-            return true;
-        }
 
-            /* start or end a quotation, where 34 is a quotation mark */
-        else if(buff_c == '\"')
+        if(buff_c == '\\')
         {
-            NEG(quoted)
-        }
-        else if(buff_c == '\\')
-        {
-            buff_c = (char)fgetc(cl->ptr);
-            if(buff_c == '\n')
+            if(!backslashed)
             {
-                *exit_code = BAD_INPUTFILE_ERR;
-                return false;
+                backslashed = true;
             }
             else
             {
-                a_carr(col, buff_c,exit_code);
+                a_carr(col, buff_c, exit_code);
+                backslashed = false;
             }
-            continue;
+        }
+
+        else if(buff_c == '\"')
+        {
+            if(backslashed)
+            {
+                a_carr(col, buff_c, exit_code);
+                backslashed = false;
+            }
+            else{NEG(quoted)}
+        }
+
+        else if(buff_c == '\n' || feof(cl->ptr))
+        {
+            if(backslashed && quoted){*exit_code = BAD_INPUTFILE_ERR;}
+#ifdef SHOWTAB
+            printf("(%d)  \t\t\t%s\n", __LINE__, col->elems_v);
+#endif
+            return true; // FIXME ?
         }
 
             /* if the char is a separator and it is not quoted */
-        else if(strchr(cl->seps.elems_v, buff_c) != NULL && !quoted)
+        else if(strchr(cl->seps.elems_v, buff_c) != NULL && !quoted && !backslashed)
         {
 #ifdef SHOWTAB
             printf("(%d)  \t\t\t%s\n", __LINE__, col->elems_v);
 #endif
             return false;
         }
-        a_carr(col, buff_c, exit_code);
+        else
+            {a_carr(col, buff_c, exit_code);}
     }
 }
 
@@ -966,9 +929,48 @@ void get_table(const int *argc, const char **argv, tab_t *t, cl_t *cl, int *exit
 
 //region functions
 
-void min_max_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
+void len_f(cl_t *cl, tab_t *t, int *exit_code)
 {
 
+}
+
+void count_f(cl_t *cl, tab_t *t, int *exit_code)
+{
+
+}
+
+void avg_f(cl_t *cl, tab_t *t, int *exit_code)
+{
+
+}
+
+void sum_f(cl_t *cl, tab_t *t, int *exit_code)
+{
+
+}
+
+/**
+ * swap [R,C] - swaps the contents of the selected cell with the cell from the last cell selection
+ */
+void swap_f(cl_t *cl, tab_t *t, int *exit_code)
+{
+    /**/
+    int r = cl->cmds[cl->cellsel].row_1;
+    int c = cl->cmds[cl->cellsel].col_1;
+
+    int r1 = cl->cmds[cl->cmds_c].col_1;
+    int c1 = cl->cmds[cl->cmds_c].col_1;
+
+    char *temp = t->rows_v[r].cols_v[c].elems_v;
+#ifdef CMDS
+    printf("\nSWAP\n%d  tmp -->%s<--\n",__LINE__, temp);
+#endif
+
+}
+
+
+void min_max_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
+{
     /* start */
     int r = cl->cmds[cl->currsel].row_1 - 1;
     int c = cl->cmds[cl->currsel].col_1 - 1;
@@ -1291,9 +1293,25 @@ void process_table(cl_t *cl, tab_t *t, int *exit_code)
 #ifdef CMDS
     printf("(%d)opt %s for cmd_c %d\n\n ", __LINE__, print_opt(cl->cmds[cl->cmds_c].proc_opt), cl->cmds_c);
 #endif
+    if(cl->cmds[cl->cmds_c].proc_opt == LEN)
+    {len_f(cl, t, exit_code);}
 
-    if(cl->cmds[cl->cmds_c].proc_opt == SET)
+    else if(cl->cmds[cl->cmds_c].proc_opt == COUNT)
+    {count_f(cl, t, exit_code);}
+
+    else if(cl->cmds[cl->cmds_c].proc_opt == AVG)
+    {avg_f(cl, t, exit_code);}
+
+    else if(cl->cmds[cl->cmds_c].proc_opt == SUM)
+    {sum_f(cl, t, exit_code);}
+
+    else if(cl->cmds[cl->cmds_c].proc_opt == SWAP)
+    {swap_f(cl, t, exit_code);}
+
+
+    else if(cl->cmds[cl->cmds_c].proc_opt == SET)
     {set_f(cl, t, exit_code);}
+
 
     if(cl->cmds[cl->cmds_c].proc_opt == AROW || cl->cmds[cl->cmds_c].proc_opt == IROW)
     {irow_arow_f(cl, t, exit_code, cl->cmds[cl->cmds_c].proc_opt);}
@@ -1341,11 +1359,14 @@ void extract_nums(cl_t *cl,char n_extr_nums[PTRNLEN], int *exit_code)
     int i = 0;
     cl->cmds[cl->cmds_c].iscolsel = false;
 
+#ifdef CMDS
+    printf("\nEXTRACT_NUMS\n%d pattern -->%s<--\n", __LINE__, n_extr_nums);
+#endif
     /* get the first token */
     token = strtok(n_extr_nums, ",");
 
     /* walk through other tokens */
-    for( ; i < 5 && token != NULL; i++)
+    for( ; i < 2 && token != NULL; i++)
     {
         /* add a number to an array */
         nums[i] = (int)(strtol(token, &ptr, 10));
@@ -1370,10 +1391,11 @@ void extract_nums(cl_t *cl,char n_extr_nums[PTRNLEN], int *exit_code)
         token = strtok(NULL, ",");
     }
 
-    cl->cmds[cl->cmds_c].col_1 = cl->cmds[cl->cmds_c].col_2;
+    //cl->cmds[cl->cmds_c].col_1 = cl->cmds[cl->cmds_c].col_2;
 
 #ifdef SELECT
-    printf("\nEXTRACT_NUMS\n(%d) extracted selection: [%d,%d,%d,%d]\n", __LINE__, nums[0], nums[1], nums[2], nums[3]);
+    printf("\nEXTRACT_NUMS\n(%d) extracted selection: [%d,%d,%d,%d]\n", __LINE__,
+           cl->cmds[cl->cmds_c].row_1, cl->cmds[cl->cmds_c].col_1,cl->cmds[cl->cmds_c].row_2, cl->cmds[cl->cmds_c].col_2);
 #endif
     CHECK_EXIT_CODE
 }
@@ -1433,7 +1455,7 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
     else if(!strncmp("len ", cmd->elems_v, strlen("len ")))
     {
         cl->cmds[cl->cmds_c].proc_opt = LEN;
-        add_ptrn(cmd, n_extr_nums, "swap ", exit_code);
+        add_ptrn(cmd, n_extr_nums, "len ", exit_code);
     }
 
     if(cl->cmds[cl->cmds_c].proc_opt >= SET && cl->cmds[cl->cmds_c].proc_opt <= LEN)
@@ -1516,19 +1538,7 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
 }
 
 
-// TODO add Escape seq as soon as SMrcka answers
-/* writes a character to the command if this character is not square brackets or semicolon */
-void a_ch_cmd(carr_t *cmd, char item, bool quoted, int *exit_code)
-{
-    if(item == '[' || item == ']' || item == ';')
-    {
-        if(quoted)
-        {a_carr(cmd, item, exit_code);}
-        else
-        {return;}
-    } else
-    {a_carr(cmd, item, exit_code);}
-}
+
 
 /* increase the number of given commands, clear the line where the previous command was */
 void prep_for_next_cmd(carr_t *cmd, int *cmds_c, const int *pos, const int *arglen)
@@ -1605,8 +1615,13 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
     if(strchr(cmd->elems_v, ' ') == NULL)
     {
         init_n_wspased_cmd(cmd, cl, t, exit_code);
-    } else /* init and call data processing functions or process temp variables */
+    }
+        /* init and call data processing functions or process temp variables */
+    else
     {
+#ifdef CMDS
+        printf("\nINIT_CMD\n%d command -->%s<--\n", __LINE__, cmd->elems_v);
+#endif
         init_wspased_cmd(cmd, cl, exit_code);
     }
     CHECK_EXIT_CODE
@@ -1629,6 +1644,7 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
     //region variables
     int arglen = (int)strlen(arg);
     bool quoted = false;
+    bool backslashed = false;
 
     /* firsst cell selection command is on the position 0,
      * also it is neccesarry to init cmds count */
@@ -1648,17 +1664,12 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
     /* walk through other tokens */
     for(int p = 0; p < arglen; p++)
     {
-        if(arg[p] == '\"')
-        {
-            NEG(quoted)
-        }
 
-            /* if the end of the argument reached */
-        else if((arg[p] == ';' && !quoted) || p == arglen - 1)
+        if(p == arglen - 1 || (p == ';' && !backslashed && !quoted))
         {
-            if(p == arglen - 1 || arg[p] != ';')
+            if(arg[p] != ';' && arg[p] != ']')
             {
-                a_ch_cmd(cmd, arg[p], quoted, exit_code);
+                a_carr(cmd, arg[p], exit_code);
             }
             /* initialize a cmd */
             init_cmd(cmd, t, cl, exit_code);
@@ -1669,19 +1680,53 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
             CHECK_EXIT_CODE
 
             prep_for_next_cmd(cmd, &cl->cmds_c, &p, &arglen);
-#ifdef CMDS
-            printf("(%d) prepared: next cmd(%d), arglen(%d), pos(%d)\n", __LINE__, cl->cmds_c, arglen, p);
-#endif
         }
+        /* if there is a backslash in the command */
         else if(arg[p] == '\\')
         {
-            //a_ch_cmd(cmd, arg[p], quoted, exit_code);
-            continue;
+            /* dont add a backslash if it is already escaped */
+            if(!backslashed)
+            {
+                backslashed = true;
+                //continue;
+            }
+            else
+            {
+                a_carr(cmd, arg[p], exit_code);
+                backslashed = false;
+            }
         }
 
-        /* add a character to an array with the command */
-        a_ch_cmd(cmd, arg[p], quoted, exit_code);
-        CHECK_EXIT_CODE
+        else if(arg[p] == '\"')
+        {
+            if(backslashed)
+            {
+                a_carr(cmd, arg[p], exit_code);
+                backslashed = false;
+            }
+            else
+            { NEG(quoted)}
+            //continue;
+        }
+
+        else if((arg[p] == '[' || arg[p] == ']'))
+        {
+            if(backslashed)
+            {
+                a_carr(cmd, arg[p], exit_code);
+                backslashed = false;
+            }
+            if(quoted)
+            {
+                a_carr(cmd, arg[p], exit_code);
+            }
+            //continue;
+        }
+        else
+        {
+            a_carr(cmd, arg[p], exit_code);
+        }
+
     }
 }
 
