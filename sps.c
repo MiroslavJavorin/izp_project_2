@@ -17,8 +17,22 @@
 #include <stdlib.h>
 //endregion
 
-// FIXME deletme
+//region DELETEME // FIXME deletme
+
 int error_line_global = 0;
+
+#ifdef SHOWALL
+    #define SHOWCORRECT
+    #define FUNS
+    #define SHOWTAB
+    #define SHOWFREE
+    #define EXPAND
+    #define CMDS
+    #define SELECT
+    #define TRIM
+#endif
+
+//endregion
 
 /* checks if exit code is greater than 0, which means error has been occurred,
  * calls function that prints an error on the stderr and returns an error */
@@ -54,6 +68,13 @@ typedef enum
     NCOLS,
     WCOLS
 } rtrim_opt; /* row trim option for trimming function */
+
+/* enum that is argument for a function set_sel() to avoid error messages if given selection looks like [R,C] */
+typedef enum
+{
+    RCRC, /* there will */
+    RC
+}sel_opt;
 
 enum erorrs
 {
@@ -585,8 +606,61 @@ int find_max_unemp(tab_t *t)
     return max_unemp;
 }
 
-// TODO documentation
-void table_trim_bef_printing(tab_t *t, int *exit_code)
+/**
+ * There is one of the separators in the cell, add the cell in quotermarks
+ * @param cell
+ * @param exit_code can be changed if there will be a problem with memory
+ */
+void quote_cell( carr_t *seps, carr_t *cell, int *exit_code)
+{
+    /* if there is a separator in the cell */
+    for(int j = 0; j <= seps->elems_c; j++)
+    {
+        if(strchr(cell->elems_v, seps->elems_v[j]) != NULL && seps->elems_v[j])
+        {
+            cell->len += 2; /* 2 for quotermarks at the beginning and at the end */
+            cell->elems_v = realloc(cell->elems_v, cell->len);
+            CHECK_ALLOC_ERR(cell->elems_v)
+
+            for(int i = cell->elems_c; i >= 0; i--)
+            {
+                cell->elems_v[i + 1] = cell->elems_v[i];
+            }
+
+            cell->elems_v[cell->elems_c + 1] = (cell->elems_v[0] = '\"');
+            cell->elems_c += 2;
+            return;
+        }
+    }
+}
+
+/**
+ * Go through all the cells and if
+ * @param t
+ * @param exit_code
+ */
+void tab_add_quotermakrs(carr_t *seps, tab_t *t, int *exit_code)
+{
+#ifdef SHOWCORRECT
+    printf("\nTAB_ADD_QUOTERMARKS\n%d t->col_c %d \n\t\t cols: ", __LINE__, t->col_c);
+#endif
+    /* went through all rows */
+    for(int r = 0; r < t->len; r++)
+    {
+#ifdef SHOWCORRECT
+        printf("%d ", t->rows_v[r].len);
+#endif
+        /* process every cell in the row */
+        for(int c = 0; c < t->rows_v[r].len; c++)
+        {
+            quote_cell(seps, &t->rows_v[r].cols_v[c], exit_code);
+            CHECK_EXIT_CODE
+        }
+    }
+}
+
+/* delete the last empty column in the table */
+void tab_trim_bef_printing(tab_t *t, int *exit_code)
 {
     int max_unempt = find_max_unemp(t);
 
@@ -594,8 +668,9 @@ void table_trim_bef_printing(tab_t *t, int *exit_code)
     {
         row_trim(&t->rows_v[r], max_unempt, exit_code, NCOLS);
     }
-#ifdef SHOWTAB
-    printf("\nTABLE_TRIM_BEF_PRINTING\n%d t->col_c %d  max_unempt %d\n",__LINE__,
+    
+#ifdef SHOWCORRECT
+    printf("\nTAB_TRIM_BEF_PRINTING\n%d t->col_c %d  max_unempt %d\n",__LINE__,
            t->col_c, max_unempt);
 #endif
 }
@@ -666,9 +741,9 @@ void table_trim(tab_t *t, int *exit_code)
 //region GETTERS
 
 /* check if selection meets the conditions and set it as a current selction */
-void set_sel(cl_t *cl, tab_t *t, int row1, int col1, int row2, int col2, int *exit_code)
+void set_sel(cl_t *cl, int row1, int col1, int row2, int col2, int *exit_code, sel_opt opt)
 {
-    if(cl->cmds_c != cl->cellsel)
+    if(cl->cmds_c != cl->cellsel && opt != RC)
     {
         /* check if the given selectinon meets the conditions */
         if(row2 < row1 || col2 < col1 ||
@@ -685,8 +760,9 @@ void set_sel(cl_t *cl, tab_t *t, int row1, int col1, int row2, int col2, int *ex
 
     /* change old current selection to the new current selection */
     cl->currsel = cl->cmds_c;
-
+#ifdef SELECT
     printf("\nSET_SEL\n%d   [%d,%d,%d,%d]\n", __LINE__, row1, col1, row2, col2);
+#endif
     /* set a selection */
     cl->cmds[cl->currsel].row_1 = row1;
     cl->cmds[cl->currsel].col_1 = col1;
@@ -773,12 +849,12 @@ void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
         {
             *exit_code = VAL_UNSUPARG_ERR;
         }
-
             /* set a new cell and current selection */
         else if(!uscore)
         {
             cl->cellsel = (cl->currsel = cl->cmds_c);
         }
+        set_sel(cl, nums[0], nums[1], nums[2], nums[3], exit_code, RC);
     }
 
         /* if entered selection looks like [R1,C1,R2,C2] */
@@ -788,7 +864,10 @@ void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
         {
             *exit_code = VAL_UNSUPCMD_ERR;
         }
-    } else
+        /* finally set the selection */
+        set_sel(cl, nums[0], nums[1], nums[2], nums[3], exit_code, RCRC);
+    }
+    else
     {
         *exit_code = ARG_UNRECARG_ERR;
     }
@@ -797,10 +876,6 @@ void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
     printf("(%d) extracted selection: [%d,%d,%d,%d]\n", __LINE__, nums[0], nums[1], nums[2], nums[3]);
 #endif
     CHECK_EXIT_CODE
-
-    /* finally set the selection */
-    set_sel(cl, t, nums[0], nums[1], nums[2], nums[3], exit_code);
-    CHECK_EXIT_CODE /* check an exit code that can be changed from above*/
 }
 
 
@@ -816,25 +891,23 @@ bool get_cell(carr_t *col, cl_t *cl, int *exit_code)
 
         if(buff_c == '\\')
         {
-            if(!backslashed)
-            {
-                backslashed = true;
-            }
-            else
+            if(backslashed)
             {
                 a_carr(col, buff_c, exit_code);
-                backslashed = false;
+                a_carr(col, buff_c, exit_code);
             }
+            //a_carr(col, buff_c, exit_code);
+            NEG(backslashed)
         }
 
         else if(buff_c == '\"')
         {
             if(backslashed)
             {
+                a_carr(col, '\\', exit_code);
                 a_carr(col, buff_c, exit_code);
-                backslashed = false;
             }
-            else{NEG(quoted)}
+            NEG(quoted)
         }
 
         else if(buff_c == '\n' || feof(cl->ptr))
@@ -856,7 +929,10 @@ bool get_cell(carr_t *col, cl_t *cl, int *exit_code)
         }
 
         else
-            {a_carr(col, buff_c, exit_code);}
+        {
+            if(backslashed){NEG(backslashed)}
+            a_carr(col, buff_c, exit_code);
+        }
     }
 }
 
@@ -1765,7 +1841,7 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
     cl->cellsel = (cl->cmds_c = 0);
 
     /* set a selection to the first cell(by default) */
-    set_sel(cl, t, 1, 1, 1, 1, exit_code);
+    set_sel(cl,1, 1, 1, 1, exit_code, RC);
 
     /* current command(0) is a selection */
     cl->cmds[cl->cmds_c].cmd_opt = SEL;
@@ -1799,28 +1875,23 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
         else if(arg[p] == '\\')
         {
             /* dont add a backslash if it is already escaped */
-            if(!backslashed)
-            {
-                backslashed = true;
-                //continue;
-            }
-            else
+            if(backslashed)
             {
                 a_carr(cmd, arg[p], exit_code);
-                backslashed = false;
+                a_carr(cmd, arg[p], exit_code);
             }
+
+            NEG(backslashed)
         }
 
         else if(arg[p] == '\"')
         {
             if(backslashed)
             {
+                a_carr(cmd, '\"', exit_code);
                 a_carr(cmd, arg[p], exit_code);
-                backslashed = false;
             }
-            else
-            { NEG(quoted)}
-            //continue;
+            NEG(quoted)
         }
 
         else if((arg[p] == '[' || arg[p] == ']'))
@@ -1828,16 +1899,16 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
             if(backslashed)
             {
                 a_carr(cmd, arg[p], exit_code);
-                backslashed = false;
+                NEG(backslashed);
             }
             if(quoted)
             {
                 a_carr(cmd, arg[p], exit_code);
             }
-            //continue;
         }
         else
         {
+            if(backslashed){NEG(backslashed)}
             a_carr(cmd, arg[p], exit_code);
         }
 
@@ -1948,6 +2019,17 @@ void print_error_message(const int *exit_code)
     fprintf(stderr, "Error %d: %s occured on the line %d.\n", *exit_code, error_msg[*exit_code - 1], error_line_global);
 }
 
+void prepare_tab_bef_printing(carr_t *seps, tab_t *t, int *exit_code)
+{
+    /* trim table before printing */ //
+    tab_trim_bef_printing(t, exit_code);
+    CHECK_EXIT_CODE
+
+    /* quote the cells if there are cells with escaped separators in the table */
+    tab_add_quotermakrs(seps, t, exit_code);
+    CHECK_EXIT_CODE
+}
+
 /*
  * Runs the program: initializes structures, then initializes cmdline arguments, then processes the table
  * After every initializing checks for an exit_code to return it if the error has been occurred
@@ -1973,11 +2055,9 @@ int run_program(const int argc, const char **argv)
     parse_cl_proc_tab(&argc, argv, &t, &cl, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
-    /* trim table before printing */ //
-    table_trim_bef_printing(&t, &exit_code);
-    CHECK_EXIT_CODE_IN_RUN_PROGRAM
-
-
+    /* beautify the table */
+    prepare_tab_bef_printing(&cl.seps, &t,&exit_code);
+    
     print_tab(&t, &cl.seps, cl.ptr);
 
     clear_data(&t, &cl);
