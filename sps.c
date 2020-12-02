@@ -1107,7 +1107,7 @@ void set_f(tab_t *t, int r, int c, char *pattern, int *exit_code) // TODO make a
  * sets the current cell selection to the temporary variable _
  * (only which cells are selected, not their contents)
  */
-void set_tmp_f(cl_t *cl, int *exit_code )
+void set_tmp_f(cl_t *cl)
 {
     cl->bufsel = cl->currsel; /* save the current selection to the buffer selection */
 }
@@ -1421,25 +1421,30 @@ void find_f(cl_t *cl, tab_t *t, int *exit_code)
 }
 
 
-void clear_f(cl_t *cl, tab_t *t)
+/**
+ * Delete content of the cells in given area indicated by parameters r1, c1, r2, c2
+ *
+ * @param r1 "row from"
+ * @param c1 "column from"
+ * @param r2 "row to"
+ * @param c2 "column to"
+ * @param t table itself
+ */
+void clear_f(int r1, int c1, int r2, int c2,  tab_t *t)
 {
-    int row_fr = cl->cmds[cl->currsel].row_1 - 1;
-
 #ifdef CMDS
-    printf("\nCLEAR\n     %d  currsel: [%d,%d,%d,%d]\n"
-           "           row_fr %d  col_fr %d\n"
-           "           row_to %d  col_to  %d\n",__LINE__, cl->cmds[cl->currsel].row_1, cl->cmds[cl->currsel]
-    .col_1, cl->cmds[cl->currsel].row_2, cl->cmds[cl->currsel].col_2, row_fr, cl->cmds[cl->currsel].col_1 - 1,
-           cl->cmds[cl->currsel].row_2, cl->cmds[cl->currsel].col_2);
+    printf("\nCLEAR\n     %d  currsel: [%d,%d,%d,%d]\n",__LINE__, r1, c1, r2, c2);
 #endif
-    for(; row_fr < cl->cmds[cl->currsel].row_2; row_fr++)
+
+    for(int row_fr = r1 - 1; row_fr < r2; row_fr++)
     {
-        for(int col_fr = cl->cmds[cl->currsel].col_1 - 1; col_fr < cl->cmds[cl->currsel].col_2; col_fr++)
+        for(int col_fr = c1 - 1 ; col_fr < c2; col_fr++)
         {
             carr_clear(&t->rows_v[row_fr].cols_v[col_fr]);
         }
     }
 }
+
 
 void irow_arow_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
 {
@@ -1472,6 +1477,59 @@ void irow_arow_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
     CHECK_EXIT_CODE
 }
 
+/* add or insert a column before or after the selection*/
+void icol_acol_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
+{
+    int left_b = 0; /* declare a left border */
+
+    /* initialize a left border */
+    if(opt == ICOL)
+    {
+        left_b = cl->cmds[cl->currsel].col_1 - 1;
+    } else if(opt == ACOL)
+    {
+        left_b = cl->cmds[cl->currsel].col_2;
+    } else return;
+
+    /* walk through all table */
+    for(int r = 0 - 1; r < t->len; r++)
+    {
+        t->rows_v[r].len++;
+
+        /* increase size of each row */
+        if(r >= cl->cmds[cl->currsel].row_1 - 1 && r < cl->cmds[cl->currsel].row_2)
+        {
+            t->rows_v[r].cols_v = (carr_t *)realloc(t->rows_v[r].cols_v, (t->rows_v[r].len) * sizeof(carr_t));
+
+            /* move all rows right */
+            for(int c = t->rows_v[r].len - 1; c > left_b; c--)
+            {
+                t->rows_v[r].cols_v[c] = t->rows_v[r].cols_v[c - 1];
+            }
+
+            /* insert a column itself */
+            carr_ctor(&t->rows_v[r].cols_v[left_b], MEMBLOCK, exit_code);
+            CHECK_EXIT_CODE
+            t->rows_v[r].cols_c++;
+        } else
+        {
+            /* increase size of another row by increasing the number of cells and allocating a new one*/
+            row_trim(&t->rows_v[r], t->rows_v[r].len, exit_code, NCOLS);
+        }
+        CHECK_EXIT_CODE
+    }
+    t->col_c++;
+}
+
+void delete_table(tab_t *t)
+{
+#ifdef CMDS
+    printf("\nDELETE_TABLE\n     %d table of %d rows and %d columns (excluded) is about to be purged...\n",__LINE__,
+            t->len, t->col_c + 1);
+#endif
+    clear_f(0, 0, t->len, t->col_c + 1, t);
+    t->deleted = true;
+}
 
 void drow_f(cl_t *cl, tab_t *t, int *exit_code) //FIXME testme
 {
@@ -1480,7 +1538,7 @@ void drow_f(cl_t *cl, tab_t *t, int *exit_code) //FIXME testme
     /* if the whole table is about to be deleted  */
     if(from == 1 && to >= t->len)
     {
-        t->deleted = true;
+        delete_table(t);
     }
 
     if(from > t->len)
@@ -1525,98 +1583,27 @@ void drow_f(cl_t *cl, tab_t *t, int *exit_code) //FIXME testme
 }
 
 
-/* add or insert a column before or after the selection*/
-void icol_acol_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
-{
-    int left_b = 0;
-    if(opt == ICOL)
-    {
-        left_b = cl->cmds[cl->currsel].col_1 - 1;
-    } else if(opt == ACOL)
-    {
-        left_b = cl->cmds[cl->currsel].col_2;
-    } else return;
-
-    /* walk through all selected rows */
-    for(int r = cl->cmds[cl->currsel].row_1 - 1; r < cl->cmds[cl->currsel].row_2; r++)
-    {
-        t->rows_v[r].len++;
-
-        /* increase size of each row */
-        if(r >= cl->cmds[cl->currsel].row_1 - 1 && r < cl->cmds[cl->currsel].row_2)
-        {
-            t->rows_v[r].cols_v = (carr_t *)realloc(t->rows_v[r].cols_v, (t->rows_v[r].len) * sizeof(carr_t));
-
-            /* move all rows right */
-            for(int c = t->rows_v[r].len - 1; c > left_b; c--)
-            {
-                t->rows_v[r].cols_v[c] = t->rows_v[r].cols_v[c - 1];
-            }
-
-            /* insert a column itself */
-            carr_ctor(&t->rows_v[r].cols_v[left_b], MEMBLOCK, exit_code);
-            CHECK_EXIT_CODE
-            t->rows_v[r].cols_c++;
-        } else
-        {
-            /* increase size of another row by increasing the number of cells and allocating a new one*/
-            row_trim(&t->rows_v[r], t->rows_v[r].len, exit_code, NCOLS);
-        }
-        CHECK_EXIT_CODE
-    }
-    t->col_c++;
-}
-
-
 /* in an existing selection, it finds the cell with the min/max numeric value and sets the selection to it */
-void dcol_f(cl_t *cl, tab_t *t, int *exit_code)
+void dcol_f(cl_t *cl, tab_t *t)
 {
     /* Tn the first option, a whole row is about to be deleted */
     if(cl->cmds[cl->currsel].col_1 == 1 && cl->cmds[cl->currsel].col_2 >= t->col_c + 1)
     {
-        /* delete a * whole row */
-        drow_f(cl, t, exit_code);
-        CHECK_EXIT_CODE
+        delete_table(t);
     }
 
-        /* The second option removes only some of the columns*/
+        /* Remove not all columns */
     else
     {
-        int r_from = cl->cmds[cl->currsel].row_1;
-        int r_to = cl->cmds[cl->currsel].row_2;
-
         int c_from = cl->cmds[cl->currsel].col_1;
         int c_to = cl->cmds[cl->currsel].col_2;
 
-
-        if(r_to > t->len)
-        {
-            /* it means the lower row is already deleted */
-            r_to = t->len;
-
-            /* it means all rows from selection are already deleted */
-            if(r_from > r_to)
-            {
-                return;
-            }
-        }
         int diff = 0;
 
-        /* walk through all rows */
-        for(int r = r_from - 1; r >= r_to - 1; r--)
+        /* walk through all rows from the end */
+        for(int r = t->len - 1; r >= 0; r--)
         {
-            if(cl->cmds[cl->currsel].col_2 > t->rows_v[r].len)
-            {
-                c_from = t->rows_v[r].len;
-                if(cl->cmds[cl->currsel].col_1 > c_from) /* it means all columns have already been deleted */
-                {
-                    continue;
-                }
-            }
-
-            printf("%d  clear from %d to %d\n", __LINE__, c_from, c_to);
-
-            /* first free all allocated cells */
+            /* firstly free all allocated cells */
             for(int c = c_from - 1; c < c_to; c++)
             {
                 FREE(t->rows_v[r].cols_v[c].elems_v)
@@ -1628,39 +1615,45 @@ void dcol_f(cl_t *cl, tab_t *t, int *exit_code)
             {
                 t->rows_v[r].cols_v[c] = t->rows_v[r].cols_v[c + diff];
             }
-            t->rows_v[r].cols_c -= diff;
-            t->rows_v[r].len -= diff;
+
+            t->rows_v[r].cols_c -= diff; /* change number of columns inn the table */
+            t->rows_v[r].len -= diff; /* --//-- */
         }
+        t->col_c -= diff; /* change number of columns in the table */
     }
 }
 //endregion
 
 
 //region PROCESSING
-
 /**
  * Call functions for processing the selection
  */
 void process_sel(cl_t *cl, tab_t *t, int *exit_code)
 {
+    /* find first cell in the current selection contains the pattern and set cell selection on it */
     if(cl->cmds[cl->cmds_c].proc_opt == FIND)
     {find_f(cl, t, exit_code);}
 
+    /* define temp selection */
     else if(cl->cmds[cl->cmds_c].proc_opt == DEF)
     {def_f(cl);}
 
+    /* change cell selection to the temp selection */
     else if(cl->cmds[cl->cmds_c].proc_opt == USE)
     {use_f(cl, t, exit_code);}
 
+    /* increase numberical value in the temp selection */
     else if(cl->cmds[cl->cmds_c].proc_opt == INC)
     {inc_f(cl, t, exit_code);}
 
-        /* set column in range of the selection by numerical value */
+    /* set column in range of the selection by numerical value */
     else if(cl->cmds[cl->cmds_c].proc_opt == MIN || cl->cmds[cl->cmds_c].proc_opt == MAX)
     {min_max_f(cl, t, exit_code, cl->cmds[cl->cmds_c].proc_opt);}
 
+    /* set current selection to the buffsel which is a buffer selection ."temp_sel" has been already occupied */
     else if(cl->cmds[cl->cmds_c].proc_opt == SETTMP)
-    {set_tmp_f(cl, exit_code);}
+    {set_tmp_f(cl);}
 }
 
 /**
@@ -1671,38 +1664,46 @@ void process_table(cl_t *cl, tab_t *t, int *exit_code)
 #ifdef CMDS
     printf("(%d)opt %s for cmd_c %d\n\n ", __LINE__, print_opt(cl->cmds[cl->cmds_c].proc_opt), cl->cmds_c);
 #endif
+    /* determine the length of the cell from one cell and write it in to another cell */
     if(cl->cmds[cl->cmds_c].proc_opt == LEN)
     {len_f(cl, t, exit_code);}
 
+    /* coout non empty columns in the current selection */
     else if(cl->cmds[cl->cmds_c].proc_opt == COUNT)
     {count_f(cl, t, exit_code);}
 
+    /* arithmetical functions */
     else if(cl->cmds[cl->cmds_c].proc_opt >= AVG && cl->cmds[cl->cmds_c].proc_opt <= SUM)
     {avg_sum_f(cl, t, exit_code);}
 
-
+    /* swap columns */
     else if(cl->cmds[cl->cmds_c].proc_opt == SWAP)
     {swap_f(cl, t);}
 
-
+    /* set a strig to the cell */
     else if(cl->cmds[cl->cmds_c].proc_opt == SET)
     {set_f(t,cl->cmds[cl->cellsel].row_1, cl->cmds[cl->cellsel].col_1, cl->cmds[cl->cellsel].pttrn, exit_code);}
 
-
+    /* append/insert a row */
     if(cl->cmds[cl->cmds_c].proc_opt == AROW || cl->cmds[cl->cmds_c].proc_opt == IROW)
     {irow_arow_f(cl, t, exit_code, cl->cmds[cl->cmds_c].proc_opt);}
 
+    /* delete row */
     else if(cl->cmds[cl->cmds_c].proc_opt == DROW)
     {drow_f(cl, t, exit_code);}
 
+    /* insert/append a column */
     else if(cl->cmds[cl->cmds_c].proc_opt == ICOL || cl->cmds[cl->cmds_c].proc_opt == ACOL)
     {icol_acol_f(cl, t, exit_code, cl->cmds[cl->cmds_c].proc_opt);}
 
+    /* celar the table */
     else if(cl->cmds[cl->cmds_c].proc_opt == CLEAR)
-    {clear_f(cl, t);}
+    {clear_f(cl->cmds[cl->currsel].row_1, cl->cmds[cl->currsel].col_1, cl->cmds[cl->currsel].row_2,
+             cl->cmds[cl->currsel].col_2, t);}
 
+    /* delete columns */
     else if(cl->cmds[cl->cmds_c].proc_opt == DCOL)
-    {dcol_f(cl, t, exit_code);}
+    {dcol_f(cl, t);}
 
     /* actually this statement must not be reached */
     else{*exit_code = UNDEF_CMD_ERR;}
@@ -2290,7 +2291,7 @@ int run_program(const int argc, const char **argv)
 
     /* beautify the table */
     prepare_tab_bef_printing(&cl.seps, &t,&exit_code);
-    
+
     print_tab(&t, &cl.seps, cl.ptr);
 
     clear_data(&t, &cl);
