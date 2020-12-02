@@ -29,9 +29,17 @@ int error_line_global = 0;
 
 /** TURN OFF DEBUGS **/
 #ifdef NOTAB
-    #undef SHOWTAB
+#undef SHOWTAB
 #endif
-
+#ifdef NOFREE
+#undef SHOWFREE
+#endif
+#ifdef NOTRIM
+#undef TRIM
+#endif
+#ifdef NOEXPAND
+#undef EXPAND
+#endif
 
 //endregion
 
