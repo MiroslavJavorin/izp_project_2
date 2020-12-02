@@ -112,10 +112,13 @@ enum argpos
 typedef enum
 {
     NOTH,
-    SET, FIND,
-    MIN, MAX, CLEAR,
-    IROW, AROW, DROW, ICOL, ACOL, DCOL,
-    SWAP, AVG, SUM, COUNT,LEN
+    CHANGESEL,
+    DEF, USE, INC,
+    FIND, SETTMP,
+    MIN, MAX,
+
+    SET, CLEAR, IROW, AROW, DROW, ICOL, ACOL, DCOL,
+    SWAP, AVG, SUM, COUNT,LEN,
     //  TODO дополнить
 } opts_t;
 
@@ -134,7 +137,7 @@ typedef struct
 {
     int elems_c;   /* number of elements array contains */
     char *elems_v; /* dynamically allocated array of chars  */
-    int len;    /* size of an array */
+    int len;       /* size of an array */
     bool isempty;
     bool isnum;
 } carr_t;
@@ -148,8 +151,6 @@ typedef struct
     opts_t proc_opt;
     char pttrn[PTRNLEN];   /* if there's a pattern in the cmd */
 
-    // TODO deletme проверь, если надо использовать и удали, ели нет
-    bool isset;
     bool iscolsel;  /* shows if the current command looks like [R,C] and meand cell selection */
 } cmd_t;
 
@@ -167,6 +168,7 @@ typedef struct
     int buf_sel;
     int cmds_c;       /* number of entered cmds. Represents a position of a current cmd */
 
+    int temps_c; //TODO
     int tmpsel[NOF_TMP_SELS]; /* array with ppositions of temp selections */
 } cl_t;
 
@@ -256,6 +258,14 @@ char *print_opt(int c)
     {return "-count-";}
     else if(c == SWAP)
     {return "-swap-";}
+    else if(c == SETTMP)
+    {return "-set tmp-";}
+    else if(c == DEF)
+    {return "-def-";}
+    else if(c == USE)
+    {return "-use-";}
+    else if(c == INC)
+    {return "-inc-";}
     else return "-NaN-";
 }
 
@@ -331,14 +341,14 @@ void clear_data(tab_t *t, cl_t *cl)
 
 //region ARRAYS WITH CHARS FUNCS
 
+
 void iscellnum(carr_t *cell)
 {
     char *junk;
     cell->isnum = true;
     strtod(cell->elems_v, &junk);
-
     if(junk[0])
-        cell->isnum = false;
+    {    cell->isnum = false;}
 }
 
 /**
@@ -754,6 +764,8 @@ void table_trim(tab_t *t, int *exit_code)
 /* check if selection meets the conditions and set it as a current selction */
 void set_sel(cl_t *cl, int row1, int col1, int row2, int col2, int *exit_code, sel_opt opt)
 {
+    cl->cmds[cl->cellsel].iscolsel = true; /* for temp variables */
+
     if(cl->cmds_c != cl->cellsel && (opt != RCCELL))
     {
         /* check if the given selectinon meets the conditions */
@@ -769,7 +781,10 @@ void set_sel(cl_t *cl, int row1, int col1, int row2, int col2, int *exit_code, s
         }
     }
     if(opt == RCCELL)
-    {cl->cellsel = cl->cmds_c;}
+    {
+        cl->cellsel = cl->cmds_c;
+        cl->cmds[cl->cellsel].iscolsel = true;
+    }
     else if(opt == NOSELOPT)
     {
         *exit_code = VAL_UNSUPARG_ERR;
@@ -1572,7 +1587,7 @@ void add_ptrn(carr_t *cmd, char *arr, char *ptrn, int *exit_code)
     }
 }
 
-void extract_nums(cl_t *cl,char n_extr_nums[PTRNLEN], int *exit_code)
+void extract_nums(cl_t *cl, char n_extr_nums[PTRNLEN], int *exit_code)
 {
     char *token = NULL;
     char *ptr = NULL;
@@ -1612,14 +1627,20 @@ void extract_nums(cl_t *cl,char n_extr_nums[PTRNLEN], int *exit_code)
         token = strtok(NULL, ",");
     }
 
-    //cl->cmds[cl->cmds_c].col_1 = cl->cmds[cl->cmds_c].col_2;
-
 #ifdef SELECT
     printf("\nEXTRACT_NUMS\n     %d extracted selection: [%d,%d,%d,%d]\n", __LINE__,
            cl->cmds[cl->cmds_c].row_1, cl->cmds[cl->cmds_c].col_1,cl->cmds[cl->cmds_c].row_2, cl->cmds[cl->cmds_c].col_2);
 #endif
     CHECK_EXIT_CODE
 }
+
+void temp_extract_nums(cl_t *cl, char n_extr_nums[PTRNLEN], int *exit_code)
+{
+    char *junk;
+    //cl->tmpsel[] //
+
+}
+
 
 /**
  *
@@ -1679,9 +1700,25 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
         add_ptrn(cmd, n_extr_nums, "len ", exit_code);
     }
 
+    /* functinos for forking with temporary variables */
+    else if(!strncmp("def ", cmd->elems_v, strlen("def ")))
+    {add_ptrn(cmd, n_extr_nums, "def _", exit_code);}
+    else if(!strncmp("use ", cmd->elems_v, strlen("use ")))
+    {add_ptrn(cmd, n_extr_nums, "use _", exit_code);}
+    else if(!strncmp("inc ", cmd->elems_v, strlen("inc ")))
+    {add_ptrn(cmd, n_extr_nums, "inc _", exit_code);}
+
     if(cl->cmds[cl->cmds_c].proc_opt >= SET && cl->cmds[cl->cmds_c].proc_opt <= LEN)
     {
         cl->cmds[cl->cmds_c].cmd_opt = PRC;
+
+        /* extract numbers from commands working with temporary variables */
+        if(cl->cmds[cl->cmds_c].proc_opt >= DEF && cl->cmds[cl->cmds_c].proc_opt <= INC)
+        {
+            temp_extract_nums(cl, n_extr_nums, exit_code);
+        }
+
+        /* command set have no numbers to extract, other have */
         if(cl->cmds[cl->cmds_c].proc_opt != SET)
         {
             extract_nums(cl, n_extr_nums, exit_code);
@@ -1724,10 +1761,7 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
     else if(!strcmp(cmd->elems_v, "max"))
     {cl->cmds[cl->cmds_c].proc_opt = MAX;}
     else if(!strcmp(cmd->elems_v, "set"))
-    {
-        // изменить паттерн и вставить во все выбранные клетки какой-то стринг
-        // set_f
-    }// TODO разберись в set
+    {cl->cmds[cl->cmds_c].proc_opt = SETTMP;}
         /* revert back the selection that was before the temporary selection was applied */
     else if(!strcmp(cmd->elems_v, "_"))
     {cl->currsel = cl->buf_sel;}
@@ -1737,7 +1771,7 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
     {
         get_nums(cmd, cl, t, exit_code);
         cl->cmds[cl->cmds_c].cmd_opt = SEL;
-        cl->cmds[cl->cmds_c].proc_opt = NOTH;
+        cl->cmds[cl->cmds_c].proc_opt = CHANGESEL;
 #ifdef SELECT
         printf("\nINIT_N_WSPASED_CMDS\n     %d  new selection [%d,%d,%d,%d]\n", __LINE__,
                cl->cmds[cl->currsel].row_1,
@@ -1746,13 +1780,11 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
                cl->cmds[cl->currsel].col_2);
 #endif
     }
-    if(cl->cmds[cl->cmds_c].proc_opt >= MIN && cl->cmds[cl->cmds_c].proc_opt <= MAX)
-    {
-        cl->cmds[cl->cmds_c].cmd_opt = SEL;
-    } else if(cl->cmds[cl->cmds_c].proc_opt >= MIN && cl->cmds[cl->cmds_c].proc_opt <= DCOL)
-    {
-        cl->cmds[cl->cmds_c].cmd_opt = PRC; /* now cmd option is processing the data */
-    }
+    if(cl->cmds[cl->cmds_c].proc_opt >= SETTMP && cl->cmds[cl->cmds_c].proc_opt <= MAX)
+    {cl->cmds[cl->cmds_c].cmd_opt = SEL;}
+
+    else if(cl->cmds[cl->cmds_c].proc_opt >= SET && cl->cmds[cl->cmds_c].proc_opt <= DCOL)
+    {cl->cmds[cl->cmds_c].cmd_opt = PRC;}
 
     FREE(currcom)
     CHECK_EXIT_CODE
@@ -1777,8 +1809,8 @@ void prep_for_next_cmd(carr_t *cmd, int *cmds_c, const int *pos, const int *argl
 void process_cmd(cl_t *cl, tab_t *t, int *exit_code)
 {
 #ifdef CMDS
-    printf("\nPROCESS_CMD\n     %d  command opt = %s \n",
-           __LINE__, print_cmd_opt(cl->cmds[cl->cmds_c].cmd_opt));
+    printf("\nPROCESS_CMD\n     %d  command opt = %s command = %s \n",
+           __LINE__, print_cmd_opt(cl->cmds[cl->cmds_c].cmd_opt), print_opt(cl->cmds[cl->cmds_c].proc_opt));
 #endif
     /* expand tab to fit the selection */
     expand_tab(t, cl->cmds[cl->cmds_c].row_2, cl->cmds[cl->cmds_c].col_2, exit_code);
@@ -1789,9 +1821,19 @@ void process_cmd(cl_t *cl, tab_t *t, int *exit_code)
             if(cl->cmds[cl->cmds_c].proc_opt == FIND)
             {find_f(cl, t, exit_code);}
 
+            else if(cl->cmds[cl->cmds_c].proc_opt == DEF)
+            {def_f(cl, t, exit_code);}
+
+            else if(cl->cmds[cl->cmds_c].proc_opt == USE)
+            {use_f(cl, t, exit_code);}
+
+            else if(cl->cmds[cl->cmds_c].proc_opt == INC)
+            {inc_f(cl, t, exit_code);}
+
                 /* set column in range of the selection by numerical value */
             else if(cl->cmds[cl->cmds_c].proc_opt == MIN || cl->cmds[cl->cmds_c].proc_opt == MAX)
             {min_max_f(cl, t, exit_code, cl->cmds[cl->cmds_c].proc_opt);}
+
 #ifdef CMDS
             printf("\n     %d cursel: [%d,%d,%d,%d]\n", __LINE__, cl->cmds[cl->currsel].row_1,
                    cl->cmds[cl->currsel].col_1,
@@ -1801,11 +1843,9 @@ void process_cmd(cl_t *cl, tab_t *t, int *exit_code)
 #endif
             break;
         case PRC: /* call a function initialized by a given parameter */
-#ifdef CMDS
-            printf("(%d) fun = %s\n", __LINE__, print_opt(cl->cmds[cl->cmds_c].proc_opt));
-#endif
             process_table(cl, t, exit_code);
             break;
+
         case NOPT:
             *exit_code = ARG_UNRECARG_ERR;
             CHECK_EXIT_CODE
@@ -1822,7 +1862,6 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
     cl->cmds[cl->cmds_c].cmd_opt = NOPT;
     cl->cmds[cl->cmds_c].proc_opt = NOTH;
     memset(cl->cmds[cl->cmds_c].pttrn, 0, PTRNLEN);
-    cl->cmds[cl->cmds_c].isset = false;
     cl->cmds[cl->cmds_c].iscolsel = false;
 
     cell_trim(cmd, exit_code); /* trim a command */ // TODO seems it is unneccesary
@@ -1840,9 +1879,6 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
         /* init and call data processing functions or process temp variables */
     else
     {
-#ifdef CMDS
-        printf("\nINIT_CMD\n     %d command -->%s<--\n", __LINE__, cmd->elems_v);
-#endif
         init_wspased_cmd(cmd, cl, exit_code);
     }
     CHECK_EXIT_CODE
