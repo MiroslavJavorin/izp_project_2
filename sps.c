@@ -296,7 +296,7 @@ void free_table(tab_t *t)
 #ifdef SHOWFREE
         printf("(%d) row %d of len %d with %d col_c: \n", __LINE__, row, t->rows_v[row].len, t->rows_v[row].cols_c);
 #endif
-        for(int col = t->col_c; col >= 0; col--)
+        for(int col = t->rows_v[row].len - 1; col >= 0; col--)
         {
 #ifdef SHOWFREE
             printf(" %d", col);
@@ -392,9 +392,8 @@ void carr_clear(carr_t *carr)
 {
     /* there is no need to clear an empty array */
     carr->isempty = true;
-    memset(carr->elems_v, 0, carr->elems_c);
+    memset(carr->elems_v, 0, carr->len-1);
     carr->elems_c = 0;
-
 }
 
 // TODO deleteme
@@ -755,7 +754,7 @@ void table_trim(tab_t *t, int *exit_code)
 /* check if selection meets the conditions and set it as a current selction */
 void set_sel(cl_t *cl, int row1, int col1, int row2, int col2, int *exit_code, sel_opt opt)
 {
-    if(cl->cmds_c != cl->cellsel && opt != RC)
+    if(cl->cmds_c != cl->cellsel && (opt != RCCELL))
     {
         /* check if the given selectinon meets the conditions */
         if(row2 < row1 || col2 < col1 ||
@@ -1208,7 +1207,7 @@ void min_max_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
 {
     /* start */
     int r = cl->cmds[cl->currsel].row_1 - 1;
-    int c = cl->cmds[cl->currsel].col_1 - 1;
+
 
     int targ_row = -1, targ_col = -1;
     double mval = 0, mtempval = 0;
@@ -1224,7 +1223,7 @@ void min_max_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
     for(; r < cl->cmds[cl->currsel].row_2; r++)
     {
         /* walk through all selected columns */
-        for(; c < cl->cmds[cl->currsel].col_2; c++)
+        for(int c = cl->cmds[cl->currsel].col_1 - 1; c < cl->cmds[cl->currsel].col_2; c++)
         {
             /* if there is a number in the column */
             if(t->rows_v[r].cols_v[c].isnum)
@@ -1277,12 +1276,11 @@ void find_f(cl_t *cl, tab_t *t, int *exit_code)
     printf("\nFIND_F\n     %d HERE WE ARE \n", __LINE__);
 #endif
     int r = cl->cmds[cl->currsel].row_1 - 1;
-    int c = cl->cmds[cl->currsel].col_1 - 1;
 
     /* walk through all selected rows and columns */
     for(; r < cl->cmds[cl->currsel].row_2; r++)
     {
-        for(; c < cl->cmds[cl->currsel].col_2; c++)
+        for(int c = cl->cmds[cl->currsel].col_1 - 1; c < cl->cmds[cl->currsel].col_2; c++)
         {
             if(strstr(t->rows_v[r].cols_v[c].elems_v, cl->cmds[cl->cmds_c].pttrn) != NULL)
             {
@@ -1301,11 +1299,17 @@ void find_f(cl_t *cl, tab_t *t, int *exit_code)
 void clear_f(cl_t *cl, tab_t *t)
 {
     int row_fr = cl->cmds[cl->currsel].row_1 - 1;
-    int col_fr = cl->cmds[cl->currsel].col_1 - 1;
 
+#ifdef CMDS
+    printf("\nCLEAR\n     %d  currsel: [%d,%d,%d,%d]\n"
+           "           row_fr %d  col_fr %d\n"
+           "           row_to %d  col_to  %d\n",__LINE__, cl->cmds[cl->currsel].row_1, cl->cmds[cl->currsel]
+    .col_1, cl->cmds[cl->currsel].row_2, cl->cmds[cl->currsel].col_2, row_fr, cl->cmds[cl->currsel].col_1 - 1,
+           cl->cmds[cl->currsel].row_2, cl->cmds[cl->currsel].col_2);
+#endif
     for(; row_fr < cl->cmds[cl->currsel].row_2; row_fr++)
     {
-        for(; col_fr < cl->cmds[cl->currsel].col_2; col_fr++)
+        for(int col_fr = cl->cmds[cl->currsel].col_1 - 1; col_fr < cl->cmds[cl->currsel].col_2; col_fr++)
         {
             carr_clear(&t->rows_v[row_fr].cols_v[col_fr]);
         }
@@ -1493,6 +1497,7 @@ void dcol_f(cl_t *cl, tab_t *t, int *exit_code)
                 FREE(t->rows_v[r].cols_v[c].elems_v)
             }
             diff = c_to - c_from + 1;
+
             /* shift all columns */
             for(int c = c_from - 1; c + diff < t->rows_v[r].len; c++)
             {
@@ -1855,7 +1860,7 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
 void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
 {
 #ifdef CMDS
-    printf("\nINIT_CMDS\n", __LINE__);
+    printf("\nINIT_CMDS\n");
 #endif
     //region variables
     int arglen = (int)strlen(arg);
@@ -1906,7 +1911,6 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
                 a_carr(cmd, arg[p], exit_code);
                 a_carr(cmd, arg[p], exit_code);
             }
-
             NEG(backslashed)
         }
 
@@ -1914,10 +1918,10 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
         {
             if(backslashed)
             {
-                a_carr(cmd, '\"', exit_code);
+                a_carr(cmd, '\\', exit_code);
                 a_carr(cmd, arg[p], exit_code);
-            }
-            NEG(quoted)
+                NEG(backslashed)
+            }else{ NEG(quoted)}
         }
 
         else if((arg[p] == '[' || arg[p] == ']'))
