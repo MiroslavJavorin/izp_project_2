@@ -2519,7 +2519,9 @@ int run_program(const int argc, const char **argv)
 /* Prints documentation, Author */
 void print_documentation()
 {
-    printf("Kiss an ugly turtle to make it cry");
+    printf(" Project: 2 - simple spreadsheet editor 2\n"
+           " Subject: IZP 2020/21\n"
+           " Author: Skuratovich Aliaksandr xskura01@fit.vutbr.cz\n");
 }
 
 int main(const int argc, const char **argv)
