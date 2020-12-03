@@ -54,7 +54,10 @@ int error_line_global = 0;
 }
 
 /* checks exit code in a void function */
-#define CHECK_EXIT_CODE if(*exit_code > 0){ printf("(%d) err\n",__LINE__);error_line_global = __LINE__;return; }
+#define CHECK_EXIT_CODE if(*exit_code > 0)\
+{\
+    printf("(%d) err\n",__LINE__);error_line_global = __LINE__;return;\
+}
 
 /* check for an alloc error */
 #define CHECK_ALLOC_ERR(arr) if(arr == NULL)\
@@ -63,10 +66,21 @@ int error_line_global = 0;
     CHECK_EXIT_CODE\
 }
 
+#define GRC_CHECK_EXIT_CODE if(*exit_code > 0)\
+{\
+    printf("(%d) err\n",__LINE__);error_line_global = __LINE__;return GRCERR;\
+}
+
+#define GRC_CHECK_ALLOC_ERR(arr) if(arr == NULL)\
+{\
+    *exit_code = W_ALLOCATING_ERR;\
+    GRC_CHECK_EXIT_CODE\
+}
+
 #define MEMBLOCK     10 /* allocation step */
 #define PTRNLEN      1001
 #define NUM_TMP_SELS 10 /* max number of temo selections */
-#define STR_W_FLOAT 42 /* represents size of the string with max float value */
+#define STR_W_FLOAT  42 /* represents size of the string with max float value */
 
 #define NEG(n) ( n = !n ); /* negation of bool value */
 #define FREE(arr) if(arr != NULL) { free(arr); } /* check if a is not NULL */
@@ -82,11 +96,36 @@ typedef enum
 /* enum that is argument for a function set_sel() to avoid error messages if given selection looks like [R,C] */
 typedef enum
 {
-    RCRC, /* there will */
+    RCRC,
     RC,
     RCCELL,
     NOSELOPT
 }sel_opt;
+
+/* option if return value of getcell function */
+typedef enum
+{
+    /* "bad row". means that the column is terminated by EOF character,
+     * which, according to the project specification, means
+     * that this row is not considered a row
+     * */
+    FEND,
+
+    /* "next row". The cell is terminated by the \n character
+     * and program must handle next row
+     * */
+    NROW,
+
+    /* Means there was an error with memory allocating or with input file */
+    GRCERR,
+
+    /* "next cell". Means there will be next cell,
+     * because current cell is terminated by a separator
+     * */
+    NCELL
+
+}gcr_retval_opt; /*"get column or row" in oldspeak */
+
 
 enum erorrs
 {
@@ -97,10 +136,9 @@ enum erorrs
     ARG_UNRECARG_ERR,     /* unrecognized argument               */
     NO_SUCH_FILE_ERR,     /* no file with the entered name exists */
     LEN_UNSUPCMD_ERR,     /* unsupported len of the cmd   */
-    Q_DONT_MATCH_ERR,      /* quotes dont match                   */
-    UNDEF_CMD_ERR,
+    UNREC_CMD_ERR,
     UNDEF_TMPCMD_ERR,  /* TODO */
-    BAD_INPUTFILE_ERR
+    BAD_INPUTFILE_ERR     /* if quotes dont match in the file or newlin/EOF is backslashed */
 };
 
 enum argpos
@@ -164,7 +202,6 @@ typedef struct
     carr_t seps;
     bool defaultsep; /* means ' ' is used as a separator */
 
-
     FILE *ptr;
 
     /* arguments themselfs */
@@ -206,14 +243,16 @@ void print_tab(tab_t *t, carr_t *seps, FILE *ptr)
         return;
 
 #ifdef SHOWTAB
-    printf("\nPRINT_TAB\n%d-----------------------\n", __LINE__);
+    printf("\nPRINT_TAB\n%d-----------------------\n"
+           "for rows %d and cols %d  \n", __LINE__, t->row_c, t->col_c);
 #endif
-    for(int row = 0; row < t->len; row++)
+    // FIXME будь аккуратнее.. можно включить трим и сделать тут < len
+    for(int row = 0; row <= t->row_c; row++)
     {
-        for(int col = 0; col < t->rows_v[row].len; col++)
+        for(int col = 0; col <= t->rows_v[row].cols_c; col++)
         {
             if(col)
-                fputc(seps->elems_v[0], stdout);
+            {    fputc(seps->elems_v[0], stdout);}
 
             for(int i = 0; i < t->rows_v[row].cols_v[col].elems_c; i++)
                 fputc(t->rows_v[row].cols_v[col].elems_v[i], stdout);
@@ -300,34 +339,27 @@ char *print_cmd_opt(int c)
 
 #endif
 
+void free_row(row_t *r)
+{
+    for(int col = r->len - 1; col >= 0; col--)
+    {
+        FREE(r->cols_v[col].elems_v)
+    }
+    FREE(r->cols_v)
+}
+
 /* frees all memory allocated by a table_t structure s */
 void free_table(tab_t *t)
 {
-
 #ifdef SHOWFREE
     printf("FREE TABLE\n     %d t->len %d  t->row_c %d t->cols_c %d\n", __LINE__, t->len, t->row_c, t->col_c);
 #endif
+
     for(int row = t->len - 1; row >= 0; row--)
     {
-#ifdef SHOWFREE
-        printf("(%d) row %d of len %d with %d col_c: \n", __LINE__, row, t->rows_v[row].len, t->rows_v[row].cols_c);
-#endif
-        for(int col = t->rows_v[row].len - 1; col >= 0; col--)
-        {
-#ifdef SHOWFREE
-            printf(" %d", col);
-#endif
-            FREE(t->rows_v[row].cols_v[col].elems_v)
-        }
-        FREE(t->rows_v[row].cols_v)
-#ifdef SHOWFREE
-        printf(" freed\n");
-#endif
+        free_row(&t->rows_v[row]);
     }
     FREE(t->rows_v)
-#ifdef SHOWFREE
-    printf("table freed\n");
-#endif
 }
 
 /* frees all memory allocated by a cl_t structure s */
@@ -603,13 +635,13 @@ int fnum_unemp_cols(row_t *r)
         else
         {return r->len - empties;}
     }
-    return 1;
+    return r->len;
 }
 
 /* find the longest unempty row in the table */
 int find_max_unemp(tab_t *t)
 {
-    int max_unemp = 1; /* prevent memory error if the whole table is empty */
+    int max_unemp = 0; /* prevent memory error if the whole table is empty */
     int tmp = 0;
 
     /* initialize the row with max number of none empty columns */
@@ -627,7 +659,7 @@ int find_max_unemp(tab_t *t)
             }
         }
     }
-    if(max_unemp == 1) /* means all columns in the all rows are empty */
+    if(!max_unemp) /* means all columns in the all rows are empty */
     {
         t->isempty = true;
     }
@@ -691,12 +723,13 @@ void tab_add_quotermakrs(carr_t *seps, tab_t *t, int *exit_code)
 void tab_trim_bef_printing(tab_t *t, int *exit_code)
 {
     int max_unempt = find_max_unemp(t);
-
-    for(int r = 0; r < t->len; r++)
+    if(max_unempt)
     {
-        row_trim(&t->rows_v[r], max_unempt, exit_code, NCOLS);
+        for(int r = 0; r < t->len; r++)
+        {
+            row_trim(&t->rows_v[r], max_unempt, exit_code, NCOLS);
+        }
     }
-    
 #ifdef SHOWCORRECT
     printf("\nTAB_TRIM_BEF_PRINTING\n     %d t->col_c %d  max_unempt %d\n",__LINE__,
            t->col_c, max_unempt);
@@ -921,7 +954,7 @@ void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
 }
 
 
-bool get_cell(carr_t *col, cl_t *cl, int *exit_code)
+gcr_retval_opt get_cell(carr_t *col, cl_t *cl, int *exit_code)
 {
     char buff_c;
     bool quoted = false;
@@ -938,7 +971,6 @@ bool get_cell(carr_t *col, cl_t *cl, int *exit_code)
                 a_carr(col, buff_c, exit_code);
                 a_carr(col, buff_c, exit_code);
             }
-            //a_carr(col, buff_c, exit_code);
             NEG(backslashed)
         }
 
@@ -948,17 +980,26 @@ bool get_cell(carr_t *col, cl_t *cl, int *exit_code)
             {
                 a_carr(col, '\\', exit_code);
                 a_carr(col, buff_c, exit_code);
-            }
-            NEG(quoted)
+                NEG(backslashed)
+            }else { NEG(quoted) }
         }
-
-        else if(buff_c == '\n' || feof(cl->ptr))
+        /* means next row is reached */
+        else if(buff_c == '\n')
         {
-            if(backslashed && quoted){*exit_code = BAD_INPUTFILE_ERR;}
+            /* newline cannot be backslashed or quoted */
+            if(backslashed || quoted){*exit_code = BAD_INPUTFILE_ERR;}
 #ifdef SHOWTAB
             printf("(%d)  \t\t\t%s\n", __LINE__, col->elems_v);
 #endif
-            return true; // FIXME ?
+            return NROW;
+        }
+
+        /* means EOF is reached */
+        else if(buff_c == EOF)
+        {
+            /* EOF cannot be backshashed or quoted  */
+            if(backslashed || quoted){*exit_code = BAD_INPUTFILE_ERR;}
+            return FEND;
         }
 
         /* if the char is a separator and it is not quoted */
@@ -967,7 +1008,7 @@ bool get_cell(carr_t *col, cl_t *cl, int *exit_code)
 #ifdef SHOWTAB
             printf("(%d)  \t\t\t%s\n", __LINE__, col->elems_v);
 #endif
-            return false;
+            return NCELL;
         }
 
         else
@@ -979,46 +1020,43 @@ bool get_cell(carr_t *col, cl_t *cl, int *exit_code)
 }
 
 /* gets a row from the file and adds it to the table */
-void get_row(row_t *row, cl_t *cl, int *exit_code)
+gcr_retval_opt get_row(row_t *row, cl_t *cl, int *exit_code)
 {
-    int end = 0;
-    for(row->cols_c = 0; !feof(cl->ptr); row->cols_c++)
+    gcr_retval_opt retval = 0;
+
+    for(row->cols_c = 0; /* hope on FEND and NROW */; row->cols_c++)
     {
         if(row->cols_c == row->len)
         {
             row->len += MEMBLOCK;
             row->cols_v = (carr_t *)realloc(row->cols_v, row->len * sizeof(carr_t));
-            CHECK_ALLOC_ERR(row->cols_v)
+            GRC_CHECK_ALLOC_ERR(row->cols_v)
 
             for(int c = row->len - 1; c >= row->cols_c; c--)
             {
                 /* create a col */
                 carr_ctor(&row->cols_v[c], MEMBLOCK, exit_code);
-                CHECK_EXIT_CODE
+                GRC_CHECK_EXIT_CODE
             }
         }
-#ifdef SHOWTAB
-        printf("(%d)  \t\tcol %d\n", __LINE__, row->cols_c);
-#endif
-        end = get_cell(&row->cols_v[row->cols_c], cl, exit_code);
-        CHECK_EXIT_CODE
+
+        retval = get_cell(&row->cols_v[row->cols_c], cl, exit_code);
+        GRC_CHECK_EXIT_CODE
 
         /* check if the cell is a number and set true or false to the cell */
         iscellnum(&row->cols_v[row->cols_c]);
 
-        if(end)
+        /* if functions get_cell() returns everything except the NCELL */
+        if(retval <= GRCERR)
         {
-#ifdef SHOWTAB
-            printf("(%d)  \tlen(%d) cols(%d)\n", __LINE__, row->len, row->cols_c);
-#endif
-            return;
+            return retval;
         }
     }
 }
 
-void get_table(const int *argc, const char **argv, tab_t *t, cl_t *cl, int *exit_code)
+void get_table(const int argc, const char **argv, tab_t *t, cl_t *cl, int *exit_code)
 {
-    if((cl->ptr = fopen(argv[*argc - 1], "r+")) == NULL)
+    if((cl->ptr = fopen(argv[argc - 1], "r+")) == NULL)
     {
         *exit_code = NO_SUCH_FILE_ERR;
         return;
@@ -1027,14 +1065,10 @@ void get_table(const int *argc, const char **argv, tab_t *t, cl_t *cl, int *exit
         /* if file has been opened successfully */
     else
     {
-        /* allocate a new empty table */
-        table_ctor(t, 1, 1, 1, exit_code);
-        CHECK_EXIT_CODE
-#ifdef SHOWTAB
-        printf("\nGET_TABLE\n     %d t->row_c %d  t->len %d  t->col_c %d\n", __LINE__, t->row_c, t->len, t->col_c);
-#endif
+        gcr_retval_opt retval;
+
         /* write the table to the structure */
-        for(t->row_c = 0; !feof(cl->ptr); t->row_c++)
+        for(t->row_c = 0; /* get_row ret val */ ; )
         {
             /* realloc the table to the new size */
             if(t->row_c == t->len)
@@ -1050,57 +1084,75 @@ void get_table(const int *argc, const char **argv, tab_t *t, cl_t *cl, int *exit
                     CHECK_EXIT_CODE
                 }
             }
-            get_row(&t->rows_v[t->row_c], cl, exit_code);
+
+            retval = get_row(&t->rows_v[t->row_c], cl, exit_code);
+
+            /* if the EOF reached delete the last row */
+            if(retval == FEND)
+            {
+                /* decrease number of rows because it represents position of the last element in the array */
+                t->row_c--;
+                break;
+            }
+            /* if there are other rows continue file processing */
+            else if(retval == NROW)
+            {
+                t->row_c++;
+            }
             CHECK_EXIT_CODE
+            t->isempty = false;
         }
-        t->row_c -= 2; /* decrase number of rows */
 #ifdef SHOWTAB
-        printf("\n     %d  len(%d) row_c(%d)\n", __LINE__, t->len, t->row_c);
+        printf("GET_TABLE\n%d     t->row_c %d  t->col_c %d\n",__LINE__, t->row_c, t->col_c );
 #endif
-        if(t->row_c >= 0)
-        {
-            /* align a table */
-            table_trim(t, exit_code);
-            CHECK_EXIT_CODE
-        }
-        else
+        /* it means file is empty */
+        if(t->row_c == -1)
         {
             t->row_c = 0;
         }
+
+        table_trim(t, exit_code);
+        CHECK_EXIT_CODE
     }
 }
 //endregion
 
 //region functions
-
-
 /**
  * Set the cell value to the string STR.
  * The string STR can be enclosed in quotation marks and can contain special characters preceded by a slash
  */
-void set_f(tab_t *t, int r, int c, char *pattern, int *exit_code) // TODO make a separate argument from a
+void set_f(tab_t *t, cl_t *cl, int *exit_code) // TODO make a separate argument from a
 // pattern
 {
+#define r cl->cmds[cl->cellsel].row_1
+#define c cl->cmds[cl->cellsel].col_1
+#define str_set cl->cmds[cl->cmds_c].pttrn
+
     /* expand_tab if it is neccessary */
-    expand_tab(t, r, c, exit_code);
+    expand_tab(t, r, c, exit_code); // TODO delete me maybe ?
     CHECK_EXIT_CODE
 
 #ifdef CMDS
-    printf("\nSET_F\n");
+    printf("\nSET_F\n     %d   set to [%d,%d]\n",__LINE__, r, c );
 #endif
+
     int len = 0;
     carr_clear(&t->rows_v[r - 1].cols_v[c - 1]); /* clear a cell */
-    len = (int)strlen(pattern);
+    len = (int)strlen(str_set);
 
     for(int p = 0; p < len; p++)
     {
-        a_carr(&t->rows_v[r - 1].cols_v[c - 1], pattern[p], exit_code);
+        a_carr(&t->rows_v[r - 1].cols_v[c - 1], str_set[p], exit_code);
         CHECK_EXIT_CODE
     }
 
 #ifdef CMDS
-    printf("%d len %d for pattern -->%s<--\n", __LINE__, len, pattern);
+    printf("%d len %d for pattern -->%s<--\n", __LINE__, len, str_set);
 #endif
+#undef str_set
+#undef c
+#undef r
 }
 
 /**
@@ -1124,7 +1176,7 @@ void def_f(cl_t *cl)
     cl->tmpsel[pos].col_2 = (cl->tmpsel[pos].col_1 = cl->tmpsel[cl->cellsel].col_1);
     cl->temps_c++; /* finally increase number of temp selections */
 #ifdef CMDS
-    printf("\nDEF_F\n     %d  temp sel defined [%d,%d]\n     %d n  num of temp sels %\n",__LINE__,
+    printf("\nDEF_F\n     %d  temp sel defined [%d,%d]\n     %d n  num of temp sels %d\n",__LINE__,
             cl->tmpsel[pos].row_1,
            cl->tmpsel[pos].col_1, __LINE__, cl->temps_c);
 #endif
@@ -1142,19 +1194,33 @@ void def_f(cl_t *cl)
  */
 void use_f(cl_t *cl, tab_t *t, int *exit_code)
 {
-#define pos cl->cmds[cl->cmds_c].row_1 /* shows position in array of temp selections */
-#define row cl->tmpsel[pos].row_1
-#define col cl->tmpsel[pos].col_1
+#define pos_tmp cl->cmds[cl->cmds_c].row_1 /* shows position in array of temp selections */
+#define r_tmp cl->tmpsel[pos_tmp].row_1
+#define c_tmp cl->tmpsel[pos_tmp].col_1
+#define r cl->cmds[cl->cellsel].row_1
+#define c cl->cmds[cl->cellsel].col_1
 
     /* check if the command is initialized */
-    if(cl->tmpsel[pos].isinit)
+    if(cl->tmpsel[pos_tmp].isinit)
     {
-        set_f(t, cl->cmds[cl->cellsel].row_1, cl->cmds[cl->cellsel].col_1 , t->rows_v[row].cols_v[col].elems_v,exit_code );
+        expand_tab(t, r_tmp, c_tmp, exit_code);
+        CHECK_EXIT_CODE
+
+        carr_clear(&t->rows_v[r].cols_v[c]);
+
+        for(int i = 0; i < t->rows_v[r_tmp].cols_v[c_tmp].len; i++)
+        {
+            a_carr(&t->rows_v[r].cols_v[c], t->rows_v[r_tmp].cols_v[c_tmp].elems_v[i], exit_code);
+            CHECK_EXIT_CODE
+        }
+
     }else *exit_code = UNDEF_TMPCMD_ERR;
     CHECK_EXIT_CODE
-#undef col
-#undef row
-#undef pos
+#undef c
+#undef r
+#undef c_tmp
+#undef r_tmp
+#undef pos_tmp
 }
 
 /**
@@ -1175,7 +1241,7 @@ void inc_f(cl_t *cl, tab_t *t, int *exit_code)
     {
         expand_tab(t, row, col, exit_code);
         CHECK_EXIT_CODE
-        char tmpresult[STR_W_FLOAT] = {0}; /* create a string where result will be written */
+        char tmpresult[PTRNLEN] = {0}; /* create a string where result will bewritten */
 
         /* if cell contains a number increase it by 1*/
         if(t->rows_v[row].cols_v[col].isnum)
@@ -1192,7 +1258,7 @@ void inc_f(cl_t *cl, tab_t *t, int *exit_code)
             tmpresult[0] = '1';
         }
 
-        set_f(t, row, col, tmpresult, exit_code);
+        //set_f(t, row, col, &tmpresult, exit_code);
         t->rows_v[row].cols_v[col].isnum = true;
 
     } else *exit_code = UNDEF_TMPCMD_ERR;
@@ -1209,8 +1275,11 @@ void len_f(cl_t *cl, tab_t *t, int *exit_code)
 {
 #define r cl->cmds[cl->cellsel].row_1
 #define c cl->cmds[cl->cellsel].col_1
-    sprintf(cl->cmds[cl->cmds_c].pttrn, "%d",(int)strlen(t->rows_v[r].cols_v[c].elems_v));
-    set_f(t, r, c, cl->cmds[cl->cmds_c].pttrn ,exit_code);
+
+    sprintf(cl->cmds[cl->cmds_c].pttrn, "%d", (int)strlen(t->rows_v[r].cols_v[c].elems_v));
+    set_f(t, cl, exit_code);
+    CHECK_EXIT_CODE
+
 #undef r
 #undef c
 }
@@ -1230,7 +1299,8 @@ void count_f(cl_t *cl, tab_t *t, int *exit_code)
         }
     }
     sprintf(cl->cmds[cl->cmds_c].pttrn, "%d", nempties);
-    set_f(t, cl->cmds[cl->cmds_c].row_1, cl->cmds[cl->cmds_c].col_1, cl->cmds[cl->cmds_c].pttrn, exit_code);
+    set_f(t, cl, exit_code);
+    CHECK_EXIT_CODE
 #ifdef CMDS
     printf("\nCOUNT_F\n     %d  count %d\n",__LINE__, nempties);
 #endif
@@ -1280,7 +1350,7 @@ void avg_sum_f(cl_t *cl, tab_t *t, int *exit_code)
     {
         cl->cmds[cl->cmds_c].pttrn[0] = '0';
     }
-    set_f( t, cl->cmds[cl->cmds_c].row_1, cl->cmds[cl->cmds_c].col_1, cl->cmds[cl->cmds_c].pttrn, exit_code);
+    set_f(t, cl, exit_code);
 }
 
 
@@ -1682,10 +1752,10 @@ void process_table(cl_t *cl, tab_t *t, int *exit_code)
 
     /* set a strig to the cell */
     else if(cl->cmds[cl->cmds_c].proc_opt == SET)
-    {set_f(t,cl->cmds[cl->cellsel].row_1, cl->cmds[cl->cellsel].col_1, cl->cmds[cl->cellsel].pttrn, exit_code);}
+    {set_f(t, cl, exit_code);}
 
     /* append/insert a row */
-    if(cl->cmds[cl->cmds_c].proc_opt == AROW || cl->cmds[cl->cmds_c].proc_opt == IROW)
+    else if(cl->cmds[cl->cmds_c].proc_opt == AROW || cl->cmds[cl->cmds_c].proc_opt == IROW)
     {irow_arow_f(cl, t, exit_code, cl->cmds[cl->cmds_c].proc_opt);}
 
     /* delete row */
@@ -1706,7 +1776,7 @@ void process_table(cl_t *cl, tab_t *t, int *exit_code)
     {dcol_f(cl, t);}
 
     /* actually this statement must not be reached */
-    else{*exit_code = UNDEF_CMD_ERR;}
+    else{*exit_code = UNREC_CMD_ERR;}
 
 }
 //endregion
@@ -1981,6 +2051,7 @@ void process_cmd(cl_t *cl, tab_t *t, int *exit_code)
 #endif
     /* expand tab to fit the selection */
     expand_tab(t, cl->cmds[cl->cmds_c].row_2, cl->cmds[cl->cmds_c].col_2, exit_code);
+    CHECK_EXIT_CODE
 
     switch(cl->cmds[cl->cmds_c].cmd_opt)
     {
@@ -2100,7 +2171,7 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
             init_cmd(cmd, t, cl, exit_code);
             CHECK_EXIT_CODE
 
-            /* process an initialized cmd change the exit_code */
+            /* process an initialized cmd */
             process_cmd(cl, t, exit_code);
             CHECK_EXIT_CODE
 
@@ -2191,7 +2262,6 @@ void init_separators(const int argc, const char **argv, cl_t *cl, int *exit_code
         }
     } else
     {
-        printf("%d %d\n", __LINE__, argc);
         *exit_code = W_SEPARATORS_ERR;
         CHECK_EXIT_CODE
     }
@@ -2235,18 +2305,16 @@ void print_error_message(const int *exit_code)
     /* an array with all error messages */
     char *error_msg[] =
             {
-                    "Twenty afternoons in utopia... Cannot allocate memory",
+                    "Cannot allocate/reallocate memoory",
                     "Entered separators are not supported by the program",
                     "You've entered wrong number of arguments",
-                    "cmd you've entered has unsupported value",
+                    "Cmd you've entered has unsupported value",
+                    "Unrecognized argument in the commandline",
                     "There is no file with this name",
-                    "cmd you've entered is too long",
-                    "Quotes dont match",
-
-                    "Why?! And we light up the sky!!!",
-                    "Watch me die",
-                    "Wake me up yesterdays morning",
-                    "Choke me by a spagetti"
+                    "Unsupported length of the command",
+                    "Unrecognized command",
+                    "Working with undefined temporary command",
+                    "Bad input file"
             };
 
     /* print an error message to stderr */
@@ -2277,12 +2345,19 @@ int run_program(const int argc, const char **argv)
     cl_t cl;
     //endregion
 
+    /* allocate a new empty table */
+    table_ctor(&t, 1, 1, 1, &exit_code);
+    CHECK_EXIT_CODE_IN_RUN_PROGRAM
+
+    /* initialize a file pointer */
+    cl.ptr = NULL;
+
     /* initialize separators from cmdline */
     init_separators(argc, argv, &cl, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
     /* adds table to the structure */
-    get_table(&argc, argv, &t, &cl, &exit_code);
+    get_table(argc, argv, &t, &cl, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
     /* parse cmdline arguments and process table for them */
