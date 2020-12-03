@@ -12,44 +12,8 @@
 //endregion
 
 
-//region debug
-
-int error_line_global = 0;
-
-/** TURN ALL DEBUGS ON **/
-#ifdef SHOWALL
-    #define SHOWCORRECT /* for correction */
-    #define SHOWTAB  /* for getting the table */
-    #define SHOWFREE /* for free memory(functnon clear_data())*/
-    #define EXPAND /* for expanding */
-    #define CMDS  /* for functinos(commands) */
-    #define SELECT  /* for selection commands */
-    #define TRIM  /* for trimming */
-    #define ICOLACOL
-    #define TMP
-    #define INCFUN
-    #define BEAUTIFY
-#endif
-
-/** TURN OFF DEBUGS **/
-#ifdef NOTAB
-#undef SHOWTAB
-#endif
-#ifdef NOFREE
-#undef SHOWFREE
-#endif
-#ifdef NOTRIM
-#undef TRIM
-#endif
-#ifdef NOEXPAND
-#undef EXPAND
-#endif
-
-//endregion
-
 /* checks if exit code is greater than 0, which means error has been occurred,
  * calls function that prints an error on the stderr and returns an error */
-
 #define CHECK_EXIT_CODE_IN_RUN_PROGRAM if(exit_code > 0)\
 {\
     print_error_message(&exit_code);\
@@ -58,24 +22,23 @@ int error_line_global = 0;
 }
 
 /* checks exit code in a void function */
-#define CHECK_EXIT_CODE if(*exit_code > 0)\
-{\
-    printf("(%d) err\n",__LINE__);error_line_global = __LINE__;return;\
-}
+#define CHECK_EXIT_CODE if(*exit_code > 0){ return; }
 
-/* check for an alloc error */
-#define CHECK_ALLOC_ERR(arr) if(arr == NULL)\
+/* check for a memory error */
+#define CHECK_ALLOC_ERR(arr) if((arr) == NULL)\
 {\
     *exit_code = W_ALLOCATING_ERR;\
     CHECK_EXIT_CODE\
 }
 
+/* checks exit code in get_row() and get_col() functionss */
 #define GRC_CHECK_EXIT_CODE if(*exit_code > 0)\
 {\
-    printf("(%d) err\n",__LINE__);error_line_global = __LINE__;return GRCERR;\
+    return GRCERR;\
 }
 
-#define GRC_CHECK_ALLOC_ERR(arr) if(arr == NULL)\
+/* check for a memory error get_row() and get_col() functionss */
+#define GRC_CHECK_ALLOC_ERR(arr) if((arr) == NULL)\
 {\
     *exit_code = W_ALLOCATING_ERR;\
     GRC_CHECK_EXIT_CODE\
@@ -84,10 +47,8 @@ int error_line_global = 0;
 #define MEMBLOCK     10 /* allocation step */
 #define PTRNLEN      1001
 #define NUM_TMP_SELS 10 /* max number of temo selections */
-#define STR_W_FLOAT  42 /* represents size of the string with max float value */
 
-#define NEG(n) ( n = !n ); /* negation of bool value */
-#define FREE(arr) if(arr != NULL) { free(arr); } /* check if a is not NULL */
+#define NEG(n) ((n) = !(n)); /* negation of bool value */
 //endregion
 
 //region enums
@@ -104,7 +65,7 @@ typedef enum
     RCCELL,
     RCEXCEPT,
     NOSELOPT
-}sel_opt;
+} sel_opt;
 
 /* option if return value of getcell function */
 typedef enum
@@ -128,7 +89,7 @@ typedef enum
      * */
     NCELL
 
-}gcr_retval_opt; /*"get column or row" in oldspeak */
+} gcr_retval_opt; /*"get column or row" in oldspeak */
 
 
 enum erorrs
@@ -140,8 +101,8 @@ enum erorrs
     ARG_UNRECARG_ERR,     /* unrecognized argument               */
     NO_SUCH_FILE_ERR,     /* no file with the entered name exists */
     LEN_UNSUPCMD_ERR,     /* unsupported len of the cmd   */
-    UNREC_CMD_ERR,
-    UNDEF_TMPCMD_ERR,  /* TODO */
+    UNREC_CMD_ERR,        /* unrecognized command */
+    UNDEF_TMPCMD_ERR,     /* indefined temp command */
     BAD_INPUTFILE_ERR     /* if quotes dont match in the file or newlin/EOF is backslashed */
 };
 
@@ -154,6 +115,7 @@ enum argpos
     POSWDEL = 3
 };
 
+/* enum with all commands */
 typedef enum
 {
     NOTH,
@@ -163,10 +125,10 @@ typedef enum
     MIN, MAX, SETTMP,
 
     SET, CLEAR, IROW, AROW, DROW, ICOL, ACOL, DCOL,
-    SWAP, AVG, SUM, COUNT,LEN,
-    //  TODO дополнить
+    SWAP, AVG, SUM, COUNT, LEN,
 } opts_t;
 
+/* enum with comand options */
 typedef enum
 {
     NOPT,
@@ -174,6 +136,7 @@ typedef enum
     PRC,
 } cmd_opt_t;
 //endregion
+
 
 //region structures
 
@@ -197,7 +160,6 @@ typedef struct
     char pttrn[PTRNLEN];   /* if there's a pattern in the cmd */
 
     bool isinit;
-    //float num_in_tmpvar;
 } cmd_t;
 
 /* contains information about arguments user entered in cmdline */
@@ -245,16 +207,12 @@ void print_tab(tab_t *t, carr_t *seps, FILE *ptr)
     if(t->deleted || t->isempty)
         return;
 
-#ifdef SHOWTAB
-    printf("\nPRINT_TAB\n%dfor rows %d and cols %d\n-----------------------\n", __LINE__, t->row_c, t->col_c);
-#endif
-
     for(int row = 0; row <= t->row_c; row++)
     {
         for(int col = 0; col <= t->rows_v[row].cols_c; col++)
         {
             if(col)
-            {    fputc(seps->elems_v[0], ptr);}
+            {fputc(seps->elems_v[0], ptr);}
 
             for(int i = 0; i < t->rows_v[row].cols_v[col].elems_c; i++)
                 fputc(t->rows_v[row].cols_v[col].elems_v[i], ptr);
@@ -262,116 +220,38 @@ void print_tab(tab_t *t, carr_t *seps, FILE *ptr)
         }
         putc('\n', ptr);
     }
-#ifdef SHOWTAB
-    printf("%d-----------------------\n", __LINE__);
-#endif
 }
 
 //region FREE MEM
-
-#ifdef CMDS
-
-char *print_opt(int c)
-{
-    if(c == SET)
-    {return "-set-";}
-    else if(c == FIND)
-    {return "-find-";}
-    else if(c == MIN)
-    {return "-min-";}
-    else if(c == MAX)
-    {return "-max-";}
-    else if(c == CLEAR)
-    {return "-clear-";}
-    else if(c == IROW)
-    {return "-irow-";}
-    else if(c == AROW)
-    {return "-arow-";}
-    else if(c == DROW)
-    {return "-drow-";}
-    else if(c == ICOL)
-    {return "-icol-";}
-    else if(c == ACOL)
-    {return "-acol-";}
-    else if(c == DCOL)
-    {return "-dcol-";}
-    else if(c == LEN)
-    {return "-len-";}
-    else if(c == AVG)
-    {return "-avg-";}
-    else if(c == SUM)
-    {return "-sum-";}
-    else if(c == COUNT)
-    {return "-count-";}
-    else if(c == SWAP)
-    {return "-swap-";}
-    else if(c == SETTMP)
-    {return "-set tmp-";}
-    else if(c == DEF)
-    {return "-def-";}
-    else if(c == USE)
-    {return "-use-";}
-    else if(c == INC)
-    {return "-inc-";}
-    else return "-NaN-";
-}
-
-char *print_cmd_opt(int c)
-{
-    switch(c)
-    {
-        case NOPT:
-        {
-            return "-NOPT-";
-        }
-        case PRC:
-        {
-            return "-PRC-";
-        }
-        case SEL:
-        {
-            return "-SEL-";
-        }
-        default:
-        {
-            return "-NaN-";
-        }
-    }
-}
-
-#endif
 
 void free_row(row_t *r)
 {
     for(int col = r->len - 1; col >= 0; col--)
     {
-        FREE(r->cols_v[col].elems_v)
+        free(r->cols_v[col].elems_v);
     }
-    FREE(r->cols_v)
+    free(r->cols_v);
 }
 
 /* frees all memory allocated by a table_t structure s */
 void free_table(tab_t *t)
 {
-#ifdef SHOWFREE
-    printf("FREE TABLE\n     %d t->len %d  t->row_c %d t->cols_c %d\n", __LINE__, t->len, t->row_c, t->col_c);
-#endif
-
     for(int row = t->len - 1; row >= 0; row--)
     {
         free_row(&t->rows_v[row]);
     }
-    FREE(t->rows_v)
+    free(t->rows_v);
 }
 
 /* frees all memory allocated by a cl_t structure s */
 void free_cl(cl_t *s)
 {
-    FREE(s->seps.elems_v)
+    free(s->seps.elems_v);
     if(s->ptr)
         fclose(s->ptr);
 }
 
+/* clears all dynamic memroy that has been allocated and closes the file */
 void clear_data(tab_t *t, cl_t *cl)
 {
     free_table(t);
@@ -381,14 +261,14 @@ void clear_data(tab_t *t, cl_t *cl)
 
 //region ARRAYS WITH CHARS FUNCS
 
-
+/* set true to the cell if it has only number inside */
 void iscellnum(carr_t *cell)
 {
     char *junk;
     cell->isnum = true;
     strtod(cell->elems_v, &junk);
     if(junk[0])
-    {    cell->isnum = false;}
+    {cell->isnum = false;}
 }
 
 /**
@@ -436,29 +316,19 @@ void set_add_item(carr_t *set, char item, int *exit_code)
 
 //endregion
 
+
 //region CONSTRUCTORS
-/* */
+/* cleat an array with chars inside carr_t structure */
 void carr_clear(carr_t *carr)
 {
     /* there is no need to clear an empty array */
     carr->isempty = true;
     carr->isnum = false;
-    memset(carr->elems_v, 0, carr->len-1);
+    memset(carr->elems_v, 0, carr->len - 1);
     carr->elems_c = 0;
 }
 
-// TODO deleteme
-void row_clear(row_t *row)
-{
-#ifdef CMDS
-    printf("\n(%d) row_clear cols_c(%d) len(%d)\n", __LINE__, row->cols_c, row->len);
-#endif
-    for(int i = 0; i < row->len; i++) // FIXME memory
-    {
-        carr_clear(&row->cols_v[i]);
-    }
-}
-
+/* allocate memory for an array of chars in the carr_t structure */
 void carr_ctor(carr_t *arr, int cell_len, int *exit_code)
 {
     arr->elems_v = (char *)calloc(cell_len, sizeof(char));
@@ -507,43 +377,46 @@ void table_ctor(tab_t *t, int rows, int cols, int cel_len, int *exit_code)
 }
 //endregion
 
+
 //region TABLE RESIZE
 
 /**
- *  Expand the table
- *
- * @param r2 Lower row
- * @param c2 Right column
- * @param exit_code if memore was not allocated
+ * Allocate new rows if r2 > nomber of rows in the table
+ * @param t
+ * @param r2
+ * @param c2
+ * @param exit_code
  */
-void expand_tab(tab_t *t, int r2, int c2, int *exit_code) // FIXME
+void add_rows(tab_t *t, int r2, int *exit_code)
 {
-    t->deleted = false;
-
-    /* expand_rows */
     if(r2 - 1 > t->row_c)
     {
         /* allocate new memory for rows */
         t->rows_v = (row_t *)realloc(t->rows_v, r2 * sizeof(row_t));
         CHECK_ALLOC_ERR(t->rows_v)
 
-#ifdef EXPAND
-        printf("\nEXPAND_TAB\n     %d table expanded from %d to %d rows\n", __LINE__, t->len, r2);
-#endif
         t->len = r2;
 
         /* allocate new memory for columns */
-        for(int r = t->row_c + 1; r < t->len; r++) // fixme change to  t->row_c + 1
+        for(int r = t->row_c + 1; r < t->len; r++)
         {
-            row_ctor(&t->rows_v[r], c2, MEMBLOCK, exit_code);
+            row_ctor(&t->rows_v[r], t->col_c + 1, MEMBLOCK, exit_code);
             CHECK_EXIT_CODE
-            t->rows_v[r].cols_c = c2 - 1;
+            t->rows_v[r].cols_c = t->col_c + 1;
         }
         t->row_c = t->len - 1;
     }
+}
 
-    /* expand collumns for all rows */
-    for(int r = 0; r < r2; r++)
+/**
+ * Reallocate each row for a new size c2 of c2 > number of columns in the table
+ * @param t
+ * @param c2
+ * @param exit_code
+ */
+void add_cols(tab_t *t, int c2, int *exit_code)
+{
+    for(int r = 0; r < t->len; r++)
     {
         if(t->rows_v[r].cols_c < c2 - 1)
         {
@@ -562,45 +435,54 @@ void expand_tab(tab_t *t, int r2, int c2, int *exit_code) // FIXME
     }
 }
 
+/**
+ *  Expand the table
+ *
+ * @param r2 Lower row
+ * @param c2 Right column
+ * @param exit_code if memore was not allocated
+ */
+void expand_tab(tab_t *t, int r2, int c2, int *exit_code)
+{
+
+    t->deleted = false;
+
+    /* expand_rows */
+    add_rows(t, r2, exit_code);
+    CHECK_EXIT_CODE
+
+    add_cols(t, c2, exit_code);
+    CHECK_EXIT_CODE
+}
+
 /* trims an array of characters */
 void cell_trim(carr_t *arr, int *exit_code)
 {
     if(arr->len >= arr->elems_c + 1)
     {
-#ifdef NO
-        printf("(%d)\t\t\tlen %d elems %d\n", __LINE__, arr->len, arr->elems_c); // FIXME what the fuck
-#endif
         /* reallocate for elements and terminating 0 */
         arr->elems_v = (char *)realloc(arr->elems_v, (arr->elems_c + 1) * sizeof(char));
         CHECK_ALLOC_ERR(arr->elems_v)
 
-        arr->len = (arr->elems_c) ? arr->elems_c + 1 : 1; // FIXME valgriind throw out + 1
+        arr->len = (arr->elems_c) ? arr->elems_c + 1 : 1;
     }
 }
 
 void row_trim(row_t *row, int siz, int *exit_code, rtrim_opt opt)
 {
     /* trim all cells in the row */
-#ifdef SHOWTAB
-    printf("\nROW_TRIM\n     %d cols(%d)  len(%d)  \n", __LINE__, row->cols_c, row->len);
-#endif
-
     if(row->len > siz)
     {
         for(int i = row->len - 1; i >= siz; i--)
         {
-            FREE(row->cols_v[i].elems_v)
+            free(row->cols_v[i].elems_v);
         }
         row->cols_v = (carr_t *)realloc(row->cols_v, siz * sizeof(carr_t));
         CHECK_ALLOC_ERR(row->cols_v)
         row->len = siz;
         row->cols_c = siz - 1;
-    }
-    else if(row->len < siz)
+    } else if(row->len < siz)
     {
-#ifdef SHOWTAB
-        printf("\nROW_TRIM\n     %d row->len %d < siz %d\n", __LINE__, row->len, siz);
-#endif
         row->cols_v = (carr_t *)realloc(row->cols_v, siz * sizeof(carr_t));
         CHECK_ALLOC_ERR(row->cols_v)
 
@@ -621,9 +503,6 @@ void row_trim(row_t *row, int siz, int *exit_code, rtrim_opt opt)
             CHECK_EXIT_CODE
         }
     }
-#ifdef SHOWTAB
-    printf("%d len %d cols %d \n", __LINE__, row->len, row->cols_c);
-#endif
 }
 
 /* find number of empty rows */
@@ -647,28 +526,19 @@ int find_max_unemp(tab_t *t)
 {
     int max_unemp = 0; /* prevent memory error if the whole table is empty */
     int tmp = 0;
-#ifdef BEAUTIFY
-    printf("\nFIND_MAX_UNEMP\n%d     t->len %d\n",__LINE__, t->len);
-#endif
+
     /* initialize the row with max number of none empty columns */
     for(int r = 0; r < t->len; r++)
     {
         if(!r)
         {
             max_unemp = fnum_unemp_cols(&t->rows_v[r]);
-#ifdef BEAUTIFY
-            printf("max_unemp for 1st row = %d\n", max_unemp);
-#endif
-        }
-        else
+        } else
         {
             tmp = fnum_unemp_cols(&t->rows_v[r]);
             if(tmp > max_unemp)
             {
                 max_unemp = tmp;
-#ifdef BEAUTIFY
-                printf("max_unemp for %dnd row = %d\n", r, max_unemp);
-#endif
             }
         }
     }
@@ -684,7 +554,7 @@ int find_max_unemp(tab_t *t)
  * @param cell
  * @param exit_code can be changed if there will be a problem with memory
  */
-void quote_cell( carr_t *seps, carr_t *cell, int *exit_code)
+void quote_cell(carr_t *seps, carr_t *cell, int *exit_code)
 {
     /* if there is a separator in the cell */
     for(int j = 0; j <= seps->elems_c; j++)
@@ -714,15 +584,9 @@ void quote_cell( carr_t *seps, carr_t *cell, int *exit_code)
  */
 void tab_add_quotermakrs(carr_t *seps, tab_t *t, int *exit_code)
 {
-#ifdef SHOWCORRECT
-    printf("\nTAB_ADD_QUOTERMARKS\n     %d t->col_c %d \n\t\t cols: ", __LINE__, t->col_c);
-#endif
     /* went through all rows */
     for(int r = 0; r < t->len; r++)
     {
-#ifdef SHOWCORRECT
-        printf("%d ", t->rows_v[r].len);
-#endif
         /* process every cell in the row */
         for(int c = 0; c < t->rows_v[r].len; c++)
         {
@@ -736,9 +600,7 @@ void tab_add_quotermakrs(carr_t *seps, tab_t *t, int *exit_code)
 void tab_trim_bef_printing(tab_t *t, int *exit_code)
 {
     int max_unempt = find_max_unemp(t);
-#ifdef BEAUTIFY
-    printf("TAB_TRIM_BEF_PRINTING\n%d     max unempt %d",__LINE__, max_unempt);
-#endif
+
     if(max_unempt)
     {
         for(int r = 0; r < t->len; r++)
@@ -746,20 +608,14 @@ void tab_trim_bef_printing(tab_t *t, int *exit_code)
             row_trim(&t->rows_v[r], max_unempt, exit_code, NCOLS);
         }
     }
-#ifdef SHOWCORRECT
-    printf("\nTAB_TRIM_BEF_PRINTING\n     %d t->col_c %d  max_unempt %d\n",__LINE__,
-           t->col_c, max_unempt);
-#endif
 }
+
 
 /* trims a table by reallocating rows and cols */
 void table_trim(tab_t *t, int *exit_code)
 {
     int row = 0;
     int maxlen = 0;
-#ifdef SHOWTAB
-    printf("\nTABLE_TRIM\n     %d len %d rows %d\n", __LINE__, t->len, t->row_c);
-#endif
 
     if(t->row_c + 1 < t->len)
     {
@@ -767,60 +623,44 @@ void table_trim(tab_t *t, int *exit_code)
         for(row = t->len - 1; row > t->row_c; row--)
         {
             for(int col = t->rows_v[row].len - 1; col >= 0; col--)
-                FREE(t->rows_v[row].cols_v[col].elems_v)
-            FREE(t->rows_v[row].cols_v)
+                free(t->rows_v[row].cols_v[col].elems_v);
+            free(t->rows_v[row].cols_v);
         }
 
         t->len = t->row_c + 1;
-        /* if there were no table */
-#ifdef SHOWTAB
-        printf("%d t->len %d  t->row_c %d\n",__LINE__, t->len, t->row_c);
-#endif
         t->rows_v = (row_t *)realloc(t->rows_v, (t->len) * sizeof(row_t));
         CHECK_ALLOC_ERR(t->rows_v)
     }
 
-    /* trim each row */
+    /* trim each row and find max length of the row in the table */
     for(row = 0; row < t->len; row++)
     {
-#ifdef SHOWTAB
-        printf("(%d) untrim row %d has len (%d) and cols (%d)\n", __LINE__, row, t->rows_v[row].len,
-               t->rows_v[row].cols_c);
-#endif
-
-        row_trim(&t->rows_v[row], t->rows_v[row].cols_c + 1, exit_code, WCOLS); //FIXME
+        row_trim(&t->rows_v[row], t->rows_v[row].cols_c + 1, exit_code, WCOLS);
         CHECK_EXIT_CODE
 
-        if(!row || maxlen < t->rows_v[row].cols_c) // find max number of  s
+        if(!row || maxlen < t->rows_v[row].cols_c)
         {
             maxlen = t->rows_v[row].cols_c + 1;
         }
-#ifdef SHOWTAB
-        printf("(%d)     trim row %d has len (%d) and cols (%d)\n", __LINE__, row, t->rows_v[row].len,
-               t->rows_v[row].cols_c);
-#endif
     }
 
+    /* reallocate all rows with new size of maxlen */
     for(row = 0; row < t->len; row++)
     {
-        row_trim(&t->rows_v[row], maxlen, exit_code, NCOLS); // FIXME
+        row_trim(&t->rows_v[row], maxlen, exit_code, NCOLS);
         CHECK_EXIT_CODE
     }
 
-    t->col_c = maxlen - 1; //FIXME (1) -1
-
-#ifdef SHOWTAB
-    printf("%d t->cols_c %d maxlen %d", __LINE__, t->col_c, maxlen);
-#endif
+    t->col_c = maxlen - 1;
 }
 //endregion
+
 
 //region GETTERS
 
 /* check if selection meets the conditions and set it as a current selction */
 void set_sel(cl_t *cl, int row1, int col1, int row2, int col2, int *exit_code, sel_opt opt)
 {
-
     if(opt == RCRC)
     {
         /* check if the given selectinon meets the conditions */
@@ -828,34 +668,28 @@ void set_sel(cl_t *cl, int row1, int col1, int row2, int col2, int *exit_code, s
            row1 < cl->cmds[cl->cellsel].row_1 ||
            col1 < cl->cmds[cl->cellsel].col_1 ||
            row2 < cl->cmds[cl->cellsel].row_2 ||
-           col2 < cl->cmds[cl->cellsel].col_2
-                )
+           col2 < cl->cmds[cl->cellsel].col_2)
         {
             *exit_code = VAL_UNSUPARG_ERR;
-            CHECK_EXIT_CODE
         }
     }
     if(opt == RCCELL)
     {
         cl->cellsel = cl->cmds_c;
-    }
-    else if(opt == NOSELOPT)
+    } else if(opt == NOSELOPT)
     {
         *exit_code = VAL_UNSUPARG_ERR;
-        CHECK_EXIT_CODE
     }
+    CHECK_EXIT_CODE
 
     /* change old current selection to the new current selection */
     cl->currsel = cl->cmds_c;
-#ifdef SELECT
-    printf("\nSET_SEL\n     %d   [%d,%d,%d,%d]\n", __LINE__, row1, col1, row2, col2);
-#endif
+
     /* set a selection */
     cl->cmds[cl->currsel].row_1 = row1;
     cl->cmds[cl->currsel].col_1 = col1;
     cl->cmds[cl->currsel].row_2 = row2;
     cl->cmds[cl->currsel].col_2 = col2;
-
 }
 
 /* returns true is newline or eof reached */
@@ -889,10 +723,7 @@ void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
                 if(++dash == 3)
                 {
                     *exit_code = VAL_UNSUPARG_ERR;
-                }
-
-                    /* in case of row selection */
-                else
+                } else  /* in case of row selection */
                 {
                     nums[i] = t->len; /* processing the last row/column*/
                 }
@@ -915,13 +746,10 @@ void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
 
                 /* if there is another string literal */
             else
-            {
-                *exit_code = W_SEPARATORS_ERR;
-            }
+            {*exit_code = W_SEPARATORS_ERR;}
 
             CHECK_EXIT_CODE
-        }
-        else if(ptr[0] != 0)
+        } else if(ptr[0] != 0)
         {
             *exit_code = VAL_UNSUPCMD_ERR;
         }
@@ -936,12 +764,11 @@ void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
         {
             *exit_code = VAL_UNSUPARG_ERR;
         }
-            /* set a new cell and current selection */
+        /* set a new cell and current selection */
         if(!uscore)
         {
             opt = RCEXCEPT;
-        }
-        else opt = RCCELL;
+        } else opt = RCCELL;
     }
 
         /* if entered selection looks like [R1,C1,R2,C2] */
@@ -953,16 +780,13 @@ void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
         }
         /* finally set the selection */
         opt = RCRC;
-    }
-    else
+    } else
     {
         *exit_code = ARG_UNRECARG_ERR;
     }
+    CHECK_EXIT_CODE
 
     set_sel(cl, nums[0], nums[1], nums[2], nums[3], exit_code, opt);
-#ifdef SELECT
-    printf("(%d) extracted selection: [%d,%d,%d,%d]\n", __LINE__, nums[0], nums[1], nums[2], nums[3]);
-#endif
     CHECK_EXIT_CODE
 }
 
@@ -976,7 +800,7 @@ gcr_retval_opt get_cell(carr_t *col, cl_t *cl, int *exit_code)
     bool quoted = false;
     bool backslashed = false;
 
-    for(col->elems_c = 0; ; )
+    for(col->elems_c = 0;;)
     {
         buff_c = (char)fgetc(cl->ptr);
 
@@ -988,48 +812,42 @@ gcr_retval_opt get_cell(carr_t *col, cl_t *cl, int *exit_code)
                 a_carr(col, buff_c, exit_code);
             }
             NEG(backslashed)
-        }
-
-        else if(buff_c == '\"')
+        } else if(buff_c == '\"')
         {
             if(backslashed)
             {
                 a_carr(col, '\\', exit_code);
                 a_carr(col, buff_c, exit_code);
                 NEG(backslashed)
-            }else { NEG(quoted) }
+            } else
+            {NEG(quoted)}
         }
-        /* means next row is reached */
+            /* means next row is reached */
         else if(buff_c == '\n')
         {
             /* newline cannot be backslashed or quoted */
-            if(backslashed || quoted){*exit_code = BAD_INPUTFILE_ERR;}
-#ifdef SHOWTAB
-            printf("(%d)  \t\t\t%s\n", __LINE__, col->elems_v);
-#endif
+            if(backslashed || quoted)
+            {*exit_code = BAD_INPUTFILE_ERR;}
             return NROW;
         }
 
-        /* means EOF is reached */
+            /* means EOF is reached */
         else if(buff_c == EOF)
         {
             /* EOF cannot be backshashed or quoted  */
-            if(backslashed || quoted){*exit_code = BAD_INPUTFILE_ERR;}
+            if(backslashed || quoted)
+            {*exit_code = BAD_INPUTFILE_ERR;}
             return FEND;
         }
 
-        /* if the char is a separator and it is not quoted */
+            /* if the char is a separator and it is not quoted */
         else if(strchr(cl->seps.elems_v, buff_c) != NULL && !quoted && !backslashed)
         {
-#ifdef SHOWTAB
-            printf("(%d)  \t\t\t%s\n", __LINE__, col->elems_v);
-#endif
             return NCELL;
-        }
-
-        else
+        } else
         {
-            if(backslashed){NEG(backslashed)}
+            if(backslashed)
+            {NEG(backslashed)}
             a_carr(col, buff_c, exit_code);
         }
     }
@@ -1070,6 +888,7 @@ gcr_retval_opt get_row(row_t *row, cl_t *cl, int *exit_code)
     }
 }
 
+/* reallocate a table if there is a need to */
 void check_for_realloc_table(tab_t *t, int *exit_code)
 {
     if(t->row_c == t->len)
@@ -1087,6 +906,7 @@ void check_for_realloc_table(tab_t *t, int *exit_code)
     }
 }
 
+/* write table from file to the table structure (tab_t)*/
 void write_tab_to_struct(cl_t *cl, tab_t *t, int *exit_code)
 {
     for(t->row_c = 0;;)
@@ -1120,10 +940,6 @@ void write_tab_to_struct(cl_t *cl, tab_t *t, int *exit_code)
     {
         t->row_c = 0;
     }
-
-#ifdef SHOWTAB
-    printf("GET_TABLE\n%d     t->row_c %d  t->col_c %d\n", __LINE__, t->row_c, t->col_c);
-#endif
 }
 
 void get_table(const int argc, const char **argv, tab_t *t, cl_t *cl, int *exit_code)
@@ -1133,7 +949,6 @@ void get_table(const int argc, const char **argv, tab_t *t, cl_t *cl, int *exit_
         *exit_code = NO_SUCH_FILE_ERR;
         return;
     }
-
         /* if file has been opened successfully */
     else
     {
@@ -1150,11 +965,9 @@ void get_table(const int argc, const char **argv, tab_t *t, cl_t *cl, int *exit_
 }
 //endregion
 
+
 //region functions
 
-//#define ABRACADABRA  just uncomment this line to see the second function. Both works perfectly
-
-#ifndef ABRACADABRA
 /**
  *  Тhe project specification says that this function only works with one cell.
  *   I could misunderstand the interpretation of the task, so I imlemented set_second function
@@ -1162,9 +975,6 @@ void get_table(const int argc, const char **argv, tab_t *t, cl_t *cl, int *exit_
  *
  *  "set STR - nastaví hodnotu buňky na řetězec STR. Řetězec STR může být ohraničen uvozovkami a může obsahovat
  *  speciální znaky uvozené lomítkem (viz formát tabulky)"
- * @param t
- * @param cl
- * @param exit_code
  */
 void set_f(tab_t *t, cl_t *cl, int *exit_code)
 {
@@ -1185,7 +995,6 @@ void set_f(tab_t *t, cl_t *cl, int *exit_code)
         for(int c = cfr - 1; c < cto; c++)
         {
             carr_clear(&t->rows_v[r].cols_v[c]); /* clear a cell */
-
             for(int p = 0; p < len; p++)
             {
                 a_carr(&t->rows_v[r].cols_v[c], str_set[p], exit_code);
@@ -1198,48 +1007,6 @@ void set_f(tab_t *t, cl_t *cl, int *exit_code)
 #undef rfr
 #undef cff
 }
-
-#endif
-
-
-
-#ifdef ABRACADABRA /** have a look on the set_f() function below, please **/
-/**
- * Set the cell value to the string STR.
- * The string STR can be enclosed in quotation marks and can contain special characters preceded by a slash
- */
-void set_f(tab_t *t, cl_t *cl, int *exit_code) // TODO make a separate argument from a
-// pattern
-{
-#define r cl->cmds[cl->cellsel].row_1
-#define c cl->cmds[cl->cellsel].col_1
-#define str_set cl->cmds[cl->cmds_c].pttrn
-
-    /* expand_tab if it is neccessary(in case of gotos and other optional commands it is neccessary) */
-    expand_tab(t, r, c, exit_code);
-    CHECK_EXIT_CODE
-
-
-    int len = 0;
-    carr_clear(&t->rows_v[r - 1].cols_v[c - 1]); /* clear a cell */
-    len = (int)strlen(str_set);
-
-    for(int p = 0; p < len; p++)
-    {
-        a_carr(&t->rows_v[r - 1].cols_v[c - 1], str_set[p], exit_code);
-        CHECK_EXIT_CODE
-    }
-
-#ifdef CMDS
-    printf("%d len %d for pattern -->%s<--\n", __LINE__, len, str_set);
-#endif
-
-#undef str_set
-#undef c
-#undef r
-}
-#endif
-
 
 
 /**
@@ -1258,22 +1025,11 @@ void def_f(cl_t *cl)
 {
 #define pos cl->cmds[cl->cmds_c].row_1
 
-#ifdef CMDS
-    printf("\nDEF_F\n"
-           "%d     position of def: %d\n",__LINE__, pos);
-#endif
-
     /* copy a current cell selection to the command */
     cl->tmpsel[pos].row_2 = (cl->tmpsel[pos].row_1 = cl->cmds[cl->cellsel].row_1);
     cl->tmpsel[pos].col_2 = (cl->tmpsel[pos].col_1 = cl->cmds[cl->cellsel].col_1);
     cl->temps_c++; /* finally increase number of temp selections */
     cl->tmpsel[pos].isinit = true; /* init the command*/
-
-#ifdef CMDS
-    printf("%d     temp sel %d defined [%d,%d]\n%d     num of temp sel %d\n",__LINE__,pos,
-           cl->tmpsel[pos].row_1,
-           cl->tmpsel[pos].col_1, __LINE__, cl->temps_c);
-#endif
 
 #undef pos
 }
@@ -1297,12 +1053,6 @@ void use_f(cl_t *cl, tab_t *t, int *exit_code)
 #define r2 cl->cmds[cl->currsel].row_2 /*      row from cell selection                    */
 #define c2 cl->cmds[cl->currsel].col_2 /*      column from cell selection                 */
 
-#ifdef CMDS
-    printf("\nUSE_F\n%d     position in tmp_arr %d\n"
-           "%d     tmp: [%d,%d]\n"
-           "%d     cur: [%d,%d,%d,%d]\n",__LINE__,pos_tmp, __LINE__, r_tmp,
-            c_tmp,__LINE__,r1,c1,r2,c2);
-#endif
     /* check if the command is initialized */
     if(cl->tmpsel[pos_tmp].isinit)
     {
@@ -1310,7 +1060,7 @@ void use_f(cl_t *cl, tab_t *t, int *exit_code)
         expand_tab(t, r_tmp, c_tmp, exit_code);
         CHECK_EXIT_CODE
 
-        for(int r = r1 - 1; r < r2; r++ )
+        for(int r = r1 - 1; r < r2; r++)
         {
             for(int c = c1 - 1; c < c2; c++)
             {
@@ -1328,7 +1078,7 @@ void use_f(cl_t *cl, tab_t *t, int *exit_code)
             }
         }
 
-    }else *exit_code = UNDEF_TMPCMD_ERR;
+    } else *exit_code = UNDEF_TMPCMD_ERR;
     CHECK_EXIT_CODE
 
 #undef c2
@@ -1353,10 +1103,6 @@ void inc_f(cl_t *cl, tab_t *t, int *exit_code)
 #define row cl->tmpsel[pos].row_1
 #define col cl->tmpsel[pos].col_1
 
-#ifdef INCFUN
-    printf("\nINC_F\n%d     temp:\n         incremented command position %d\n"
-           "         row %d col %d\n",__LINE__, pos, row, col );
-#endif
     /* check if the command is initialized */
     if(cl->tmpsel[pos].isinit)
     {
@@ -1371,15 +1117,15 @@ void inc_f(cl_t *cl, tab_t *t, int *exit_code)
             num_in_cell++; /* increase the number by 1 */
             sprintf(tmpresult, "%g", num_in_cell); /* add a result to the temp string with result */
         }
-        /* means temporary variable does not contain a number set 1 in the cell */
+            /* means temporary variable does not contain a number set 1 in the cell */
         else
         {
             tmpresult[0] = '1';
         }
 
+
         int numlen = (int)strlen(tmpresult);
         carr_clear(&t->rows_v[row - 1].cols_v[col - 1]);
-
         for(int i = 0; i < numlen; i++)
         {
             a_carr(&t->rows_v[row - 1].cols_v[col - 1], tmpresult[i], exit_code);
@@ -1433,9 +1179,6 @@ void count_f(cl_t *cl, tab_t *t, int *exit_code)
     sprintf(cl->cmds[cl->cmds_c].pttrn, "%d", nempties);
     set_f(t, cl, exit_code);
     CHECK_EXIT_CODE
-#ifdef CMDS
-    printf("\nCOUNT_F\n     %d  count %d\n",__LINE__, nempties);
-#endif
 #undef r1
 #undef r2
 #undef c1
@@ -1454,12 +1197,6 @@ void avg_sum_f(cl_t *cl, tab_t *t, int *exit_code)
 {
     int numcels = 0;
     float result = 0;
-#ifdef CMDS
-    printf("\nAVG_SUM_F\n     %d for cursel [%d,%d,%d,%d]\n",__LINE__, cl->cmds[cl->currsel].row_1,
-            cl->cmds[cl->currsel]
-    .row_2,
-           cl->cmds[cl->currsel].col_1, cl->cmds[cl->currsel].col_2 );
-#endif
 
     for(int r = cl->cmds[cl->currsel].row_1 - 1; r < cl->cmds[cl->currsel].row_2; r++)
     {
@@ -1481,8 +1218,7 @@ void avg_sum_f(cl_t *cl, tab_t *t, int *exit_code)
             result /= (float)numcels;
         }
         sprintf(cl->cmds[cl->cmds_c].pttrn, "%g", result); /* write the result to pattern */
-    }
-    else
+    } else
     {
         cl->cmds[cl->cmds_c].pttrn[0] = '0';
     }
@@ -1496,35 +1232,24 @@ void avg_sum_f(cl_t *cl, tab_t *t, int *exit_code)
 void swap_f(cl_t *cl, tab_t *t)
 {
     /* create macros to use less mempry and to make the code more readable */
-#define r cl->cmds[cl->cellsel].row_1 - 1
-#define c cl->cmds[cl->cellsel].col_1 - 1
-#define r1 cl->cmds[cl->cmds_c].row_1 - 1
-#define c1 cl->cmds[cl->cmds_c].col_1 - 1
+#define r (cl->cmds[cl->cellsel].row_1 - 1)
+#define c (cl->cmds[cl->cellsel].col_1 - 1)
+#define r1 (cl->cmds[cl->cmds_c].row_1 - 1)
+#define c1 (cl->cmds[cl->cmds_c].col_1 - 1)
 
-#ifdef CMDS
-    printf("\nSWAP_F\n     %d bef %d %d | %d %d\n",__LINE__, t->rows_v[r].cols_v[c].len, t->rows_v[r].cols_v[c].elems_c,
-           t->rows_v[r1].cols_v[c1].len, t->rows_v[r1].cols_v[c1].elems_c);
-#endif
-
-    /* */
     char *tmp = t->rows_v[r].cols_v[c].elems_v;
     int tempum = t->rows_v[r].cols_v[c].len;
     //int elems_c = t->rows_v[r].cols_v[c].elems_c;
 
     /* copy 2nd row to the first row */
     t->rows_v[r].cols_v[c].elems_v = t->rows_v[r1].cols_v[c1].elems_v;
-    t->rows_v[r].cols_v[c].len     = t->rows_v[r1].cols_v[c1].len;
+    t->rows_v[r].cols_v[c].len = t->rows_v[r1].cols_v[c1].len;
     t->rows_v[r1].cols_v[c1].len = tempum;
     tempum = t->rows_v[r].cols_v[c].elems_c;
     t->rows_v[r].cols_v[c].elems_c = t->rows_v[r1].cols_v[c1].elems_c;
     t->rows_v[r1].cols_v[c1].elems_c = tempum;
 
     t->rows_v[r1].cols_v[c1].elems_v = tmp;
-
-#ifdef CMDS
-    printf("%d aft %d %d | %d %d\n", __LINE__, t->rows_v[r].cols_v[c].len, t->rows_v[r].cols_v[c].elems_c,
-           t->rows_v[r1].cols_v[c1].len, t->rows_v[r1].cols_v[c1].elems_c);
-#endif
 
 #undef c1
 #undef r1
@@ -1538,16 +1263,9 @@ void min_max_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
     /* start */
     int r = cl->cmds[cl->currsel].row_1 - 1;
 
-
     int targ_row = -1, targ_col = -1;
     double mval = 0, mtempval = 0;
     bool found = false;
-#ifdef CMDS
-    printf("\nMIN_MAX\n     %d  current selection [%d,%d,%d,%d] \n%d  lower row = %d  roght col = %d\n",__LINE__,
-           cl->cmds[cl->currsel].row_1, cl->cmds[cl->currsel].col_1, cl->cmds[cl->currsel].row_2,
-           cl->cmds[cl->currsel].col_2,
-            __LINE__, cl->cmds[cl->currsel].row_2,cl->cmds[cl->currsel].col_2);
-#endif
 
     /* walk through all selected rows */
     for(; r < cl->cmds[cl->currsel].row_2; r++)
@@ -1591,20 +1309,14 @@ void min_max_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
     /* if targ_row and targ_col havn't been changed that means there is no cell in the selection with a number in it */
     if(targ_row != -1 && targ_col != -1)
     {
-#ifdef CMDS
-        printf("%d new selection [%d,%d,%d,%d]", __LINE__, targ_row + 1, targ_col + 1, targ_row + 1, targ_col + 1);
-#endif
         cl->cellsel = cl->cmds_c;
-        set_sel(cl,targ_row + 1, targ_col + 1, targ_row + 1, targ_col + 1, exit_code, RCCELL);
+        set_sel(cl, targ_row + 1, targ_col + 1, targ_row + 1, targ_col + 1, exit_code, RCCELL);
     }
 }
 
-
+/* in an existing cell selection, selects the first cell whose value contains the substring STR */
 void find_f(cl_t *cl, tab_t *t, int *exit_code)
 {
-#ifdef CMDS
-    printf("\nFIND_F\n     %d HERE WE ARE \n", __LINE__);
-#endif
     int r = cl->cmds[cl->currsel].row_1 - 1;
 
     /* walk through all selected rows and columns */
@@ -1615,17 +1327,12 @@ void find_f(cl_t *cl, tab_t *t, int *exit_code)
             if(strstr(t->rows_v[r].cols_v[c].elems_v, cl->cmds[cl->cmds_c].pttrn) != NULL)
             {
                 cl->cellsel = cl->cmds_c;
-                set_sel(cl,r + 1, c + 1, r + 1, c + 1, exit_code, RCCELL);
-#ifdef CMDS
-                printf("%d pattern %s found, sel havе been changed to [%d,%d,%d,%d]\n", __LINE__, cl->cmds[cl->cmds_c]
-                        .pttrn, r + 1, c + 1, r + 1, c + 1);
-#endif
+                set_sel(cl, r + 1, c + 1, r + 1, c + 1, exit_code, RCCELL);
                 return;
             }
         }
     }
 }
-
 
 /**
  * Delete content of the cells in given area indicated by parameters r1, c1, r2, c2
@@ -1636,7 +1343,7 @@ void find_f(cl_t *cl, tab_t *t, int *exit_code)
  * @param c2 "column to"
  * @param t table itself
  */
-void clear_f(int r1, int c1, int r2, int c2,  tab_t *t)
+void clear_f(int r1, int c1, int r2, int c2, tab_t *t)
 {
 #ifdef CMDS
     printf("\nCLEAR\n     %d  currsel: [%d,%d,%d,%d]\n",__LINE__, r1, c1, r2, c2);
@@ -1644,14 +1351,14 @@ void clear_f(int r1, int c1, int r2, int c2,  tab_t *t)
 
     for(int row_fr = r1 - 1; row_fr < r2; row_fr++)
     {
-        for(int col_fr = c1 - 1 ; col_fr < c2; col_fr++)
+        for(int col_fr = c1 - 1; col_fr < c2; col_fr++)
         {
             carr_clear(&t->rows_v[row_fr].cols_v[col_fr]);
         }
     }
 }
 
-
+/* inserts one blank row to the left/right of the selected cells */
 void irow_arow_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
 {
     int upper_b = 0;
@@ -1699,7 +1406,7 @@ void icol_acol_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
     } else return;
 
     /* walk through each row */
-    for(int r = 0 ; r < t->len; r++)
+    for(int r = 0; r < t->len; r++)
     {
         t->rows_v[r].len++;
 
@@ -1723,10 +1430,6 @@ void icol_acol_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
 
 void delete_table(tab_t *t)
 {
-#ifdef CMDS
-    printf("\nDELETE_TABLE\n     %d table of %d rows and %d columns (excluded) is about to be purged...\n",__LINE__,
-            t->len, t->col_c + 1);
-#endif
     clear_f(0, 0, t->len, t->col_c + 1, t);
     t->deleted = true;
 }
@@ -1754,17 +1457,13 @@ void drow_f(cl_t *cl, tab_t *t, int *exit_code) //FIXME testme
 
     int diff = to - from + 1;
 
-#ifdef CMDS
-    printf("\nDROW\n     %d  from = %d to = %d\n", __LINE__, from, to);
-#endif
-
     for(int r = from - 1; r < to; r++)
     {
         for(int c = t->rows_v[r].len - 1; c >= 0; c--)
         {
-            FREE(t->rows_v[r].cols_v[c].elems_v)
+            free(t->rows_v[r].cols_v[c].elems_v);
         }
-        FREE(t->rows_v[r].cols_v)
+        free(t->rows_v[r].cols_v);
     }
 
     for(int r = from - 1; r + diff < t->len; r++)
@@ -1774,9 +1473,6 @@ void drow_f(cl_t *cl, tab_t *t, int *exit_code) //FIXME testme
     t->row_c -= diff;
     t->len -= diff;
 
-#ifdef CMDS
-    printf("     %d   t->row_c %d   t->len %d\n", __LINE__, t->row_c, t->len);
-#endif
     /* re-allocate memory */
     t->rows_v = (row_t *)realloc(t->rows_v, t->len * sizeof(row_t));
     CHECK_ALLOC_ERR(t->rows_v)
@@ -1806,7 +1502,7 @@ void dcol_f(cl_t *cl, tab_t *t)
             /* firstly free all allocated cells */
             for(int c = c_from - 1; c < c_to; c++)
             {
-                FREE(t->rows_v[r].cols_v[c].elems_v)
+                free(t->rows_v[r].cols_v[c].elems_v);
             }
             diff = c_to - c_from + 1;
 
@@ -1836,81 +1532,82 @@ void process_sel(cl_t *cl, tab_t *t, int *exit_code)
     if(cl->cmds[cl->cmds_c].proc_opt == FIND)
     {find_f(cl, t, exit_code);}
 
-    /* define temp selection */
+        /* define temp selection */
     else if(cl->cmds[cl->cmds_c].proc_opt == DEF)
     {def_f(cl);}
 
-    /* change cell selection to the temp selection */
+        /* change cell selection to the temp selection */
     else if(cl->cmds[cl->cmds_c].proc_opt == USE)
     {use_f(cl, t, exit_code);}
 
-    /* increase numberical value in the temp selection */
+        /* increase numberical value in the temp selection */
     else if(cl->cmds[cl->cmds_c].proc_opt == INC)
     {inc_f(cl, t, exit_code);}
 
-    /* set column in range of the selection by numerical value */
+        /* set column in range of the selection by numerical value */
     else if(cl->cmds[cl->cmds_c].proc_opt == MIN || cl->cmds[cl->cmds_c].proc_opt == MAX)
     {min_max_f(cl, t, exit_code, cl->cmds[cl->cmds_c].proc_opt);}
 
-    /* set current selection to the buffsel which is a buffer selection ."temp_sel" has been already occupied */
+        /* set current selection to the buffsel which is a buffer selection ."temp_sel" has been already occupied */
     else if(cl->cmds[cl->cmds_c].proc_opt == SETTMP)
     {set_tmp_f(cl);}
 }
 
 /**
- *  Call functions for processing the table 
+ *  Call functions for processing the table
  */
 void process_table(cl_t *cl, tab_t *t, int *exit_code)
 {
-#ifdef CMDS
-    printf("(%d)opt %s for cmd_c %d\n\n ", __LINE__, print_opt(cl->cmds[cl->cmds_c].proc_opt), cl->cmds_c);
-#endif
     /* determine the length of the cell from one cell and write it in to another cell */
     if(cl->cmds[cl->cmds_c].proc_opt == LEN)
     {len_f(cl, t, exit_code);}
 
-    /* coout non empty columns in the current selection */
+        /* coout non empty columns in the current selection */
     else if(cl->cmds[cl->cmds_c].proc_opt == COUNT)
     {count_f(cl, t, exit_code);}
 
-    /* arithmetical functions */
+        /* arithmetical functions */
     else if(cl->cmds[cl->cmds_c].proc_opt >= AVG && cl->cmds[cl->cmds_c].proc_opt <= SUM)
     {avg_sum_f(cl, t, exit_code);}
 
-    /* swap columns */
+        /* swap columns */
     else if(cl->cmds[cl->cmds_c].proc_opt == SWAP)
     {swap_f(cl, t);}
 
-    /* set a strig to the cell */
+        /* set a strig to the cell */
     else if(cl->cmds[cl->cmds_c].proc_opt == SET)
     {set_f(t, cl, exit_code);}
 
-    /* append/insert a row */
+        /* append/insert a row */
     else if(cl->cmds[cl->cmds_c].proc_opt == AROW || cl->cmds[cl->cmds_c].proc_opt == IROW)
     {irow_arow_f(cl, t, exit_code, cl->cmds[cl->cmds_c].proc_opt);}
 
-    /* delete row */
+        /* delete row */
     else if(cl->cmds[cl->cmds_c].proc_opt == DROW)
     {drow_f(cl, t, exit_code);}
 
-    /* insert/append a column */
+        /* insert/append a column */
     else if(cl->cmds[cl->cmds_c].proc_opt == ICOL || cl->cmds[cl->cmds_c].proc_opt == ACOL)
     {icol_acol_f(cl, t, exit_code, cl->cmds[cl->cmds_c].proc_opt);}
 
-    /* celar the table */
+        /* celar the table */
     else if(cl->cmds[cl->cmds_c].proc_opt == CLEAR)
-    {clear_f(cl->cmds[cl->currsel].row_1, cl->cmds[cl->currsel].col_1, cl->cmds[cl->currsel].row_2,
-             cl->cmds[cl->currsel].col_2, t);}
+    {
+        clear_f(cl->cmds[cl->currsel].row_1, cl->cmds[cl->currsel].col_1, cl->cmds[cl->currsel].row_2,
+                cl->cmds[cl->currsel].col_2, t);
+    }
 
-    /* delete columns */
+        /* delete columns */
     else if(cl->cmds[cl->cmds_c].proc_opt == DCOL)
     {dcol_f(cl, t);}
 
-    /* actually this statement must not be reached */
-    else{*exit_code = UNREC_CMD_ERR;}
+        /* actually this statement must not be reached */
+    else
+    {*exit_code = UNREC_CMD_ERR;}
 
 }
 //endregion
+
 
 //region cmdLINE ARGS PARSING
 
@@ -1920,9 +1617,6 @@ void add_ptrn(carr_t *cmd, char *arr, char *ptrn, int *exit_code)
     {
         /* write a pattern to the structure */
         memcpy(arr, cmd->elems_v + strlen(ptrn), strlen(cmd->elems_v + strlen(ptrn)));
-#ifdef CMDS
-        printf("\nINIT_WSPASED_CMD\n     %d pattern -->%s<--", __LINE__, arr);
-#endif
     }
         /* pattern is too long */
     else
@@ -1940,14 +1634,11 @@ void extract_nums(cl_t *cl, char n_extr_nums[PTRNLEN], int *exit_code)
     int nums[5] = {0}; /* to return an error code if smething like [a,a,a,a,a,a,a] will be entered */
     int i = 0;
 
-#ifdef CMDS
-    printf("\nEXTRACT_NUMS\n     %d pattern -->%s<--\n", __LINE__, n_extr_nums);
-#endif
     /* get the first token */
     token = strtok(n_extr_nums, ",");
 
     /* walk through other tokens */
-    for( ; i < 2 && token != NULL; i++)
+    for(; i < 2 && token != NULL; i++)
     {
         /* add a number to an array */
         nums[i] = (int)(strtol(token, &ptr, 10));
@@ -1960,22 +1651,15 @@ void extract_nums(cl_t *cl, char n_extr_nums[PTRNLEN], int *exit_code)
         if(i == 0)
         {
             cl->cmds[cl->cmds_c].row_1 = (cl->cmds[cl->cmds_c].row_2 = nums[i]);
-        }
-        else if(i == 1)
+        } else if(i == 1)
         {
             cl->cmds[cl->cmds_c].col_1 = (cl->cmds[cl->cmds_c].col_2 = nums[i]);
-        }
-        else
+        } else
         {
             *exit_code = VAL_UNSUPARG_ERR;
         }
         token = strtok(NULL, ",");
     }
-
-#ifdef SELECT
-    printf("\nEXTRACT_NUMS\n     %d extracted selection: [%d,%d,%d,%d]\n", __LINE__,
-           cl->cmds[cl->cmds_c].row_1, cl->cmds[cl->cmds_c].col_1,cl->cmds[cl->cmds_c].row_2, cl->cmds[cl->cmds_c].col_2);
-#endif
     CHECK_EXIT_CODE
 }
 
@@ -1992,10 +1676,6 @@ void tmp_cmds_extract_nums(cl_t *cl, char n_extr_nums[PTRNLEN], int *exit_code)
     int num = 0;
     num = (int)strtol(n_extr_nums, &junk, 10);
 
-#ifdef TMP
-    printf("\nTMP_CMDS_EXTRACT_NUMS\n%d     pattern -->%s<--num = %d, jink is%s empty \n",__LINE__,n_extr_nums,num,
-           (junk[0]) ? " not" : "");
-#endif
     /* if there is a wrong number in the command or number is too large */
     if(junk[0] || num > NUM_TMP_SELS - 1 || num < 0)
     {
@@ -2005,9 +1685,6 @@ void tmp_cmds_extract_nums(cl_t *cl, char n_extr_nums[PTRNLEN], int *exit_code)
 
     /* partly initialize the command */
     cl->cmds[cl->cmds_c].row_1 = num; /* represents the number of temp_sel command */
-#ifdef CMDS
-    printf("%d     tmp com num %d initialized\n",__LINE__, cl->cmds[cl->cmds_c].row_1);
-#endif
 }
 
 
@@ -2041,7 +1718,7 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
         cl->cmds[cl->cmds_c].proc_opt = INC;
         add_ptrn(cmd, n_extr_nums, "inc _", exit_code);
     }
-    /* The string STR can be enclosed in quotation marks and can contain special characters preceded by a slash */
+        /* The string STR can be enclosed in quotation marks and can contain special characters preceded by a slash */
     else if(!strncmp("find ", cmd->elems_v, strlen("find ")))
     {
         cl->cmds[cl->cmds_c].proc_opt = FIND;
@@ -2049,35 +1726,31 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
         CHECK_EXIT_CODE
     }
 
-    /** PROCESSING **/
-    /* The string STR can be enclosed in quotation marks and can contain special characters preceded by a slash */
+        /** PROCESSING **/
+        /* The string STR can be enclosed in quotation marks and can contain special characters preceded by a slash */
     else if(!strncmp("set ", cmd->elems_v, strlen("set ")))
     {
         cl->cmds[cl->cmds_c].proc_opt = SET;
         add_ptrn(cmd, cl->cmds[cl->cmds_c].pttrn, "set ", exit_code);
     }
-    /* commands use a cell as an argument */
+        /* commands use a cell as an argument */
     else if(!strncmp("swap ", cmd->elems_v, strlen("swap ")))
     {
         cl->cmds[cl->cmds_c].proc_opt = SWAP;
         add_ptrn(cmd, n_extr_nums, "swap ", exit_code);
-    }
-    else if(!strncmp("sum ", cmd->elems_v, strlen("sum ")))
+    } else if(!strncmp("sum ", cmd->elems_v, strlen("sum ")))
     {
         cl->cmds[cl->cmds_c].proc_opt = SUM;
         add_ptrn(cmd, n_extr_nums, "sum ", exit_code);
-    }
-    else if(!strncmp("avg ", cmd->elems_v, strlen("avg ")))
+    } else if(!strncmp("avg ", cmd->elems_v, strlen("avg ")))
     {
         cl->cmds[cl->cmds_c].proc_opt = AVG;
         add_ptrn(cmd, n_extr_nums, "avg ", exit_code);
-    }
-    else if(!strncmp("count ", cmd->elems_v, strlen("count ")))
+    } else if(!strncmp("count ", cmd->elems_v, strlen("count ")))
     {
         cl->cmds[cl->cmds_c].proc_opt = COUNT;
         add_ptrn(cmd, n_extr_nums, "count ", exit_code);
-    }
-    else if(!strncmp("len ", cmd->elems_v, strlen("len ")))
+    } else if(!strncmp("len ", cmd->elems_v, strlen("len ")))
     {
         cl->cmds[cl->cmds_c].proc_opt = LEN;
         add_ptrn(cmd, n_extr_nums, "len ", exit_code);
@@ -2094,8 +1767,7 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
         {
             extract_nums(cl, n_extr_nums, exit_code);
         }
-    }
-    else if(cl->cmds[cl->cmds_c].proc_opt >= DEF && cl->cmds[cl->cmds_c].proc_opt <= FIND)
+    } else if(cl->cmds[cl->cmds_c].proc_opt >= DEF && cl->cmds[cl->cmds_c].proc_opt <= FIND)
     {
         cl->cmds[cl->cmds_c].cmd_opt = SEL;
         /* extract numbers from commands working with temporary variables */
@@ -2152,13 +1824,6 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
         get_nums(cmd, cl, t, exit_code);
         cl->cmds[cl->cmds_c].cmd_opt = SEL;
         cl->cmds[cl->cmds_c].proc_opt = CHANGESEL;
-#ifdef SELECT
-        printf("\nINIT_N_WSPASED_CMDS\n     %d  new selection [%d,%d,%d,%d]\n", __LINE__,
-               cl->cmds[cl->currsel].row_1,
-               cl->cmds[cl->currsel].col_1,
-               cl->cmds[cl->currsel].row_2,
-               cl->cmds[cl->currsel].col_2);
-#endif
     }
     if(cl->cmds[cl->cmds_c].proc_opt >= MIN && cl->cmds[cl->cmds_c].proc_opt <= MAX)
     {cl->cmds[cl->cmds_c].cmd_opt = SEL;}
@@ -2166,12 +1831,9 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
     else if(cl->cmds[cl->cmds_c].proc_opt >= SETTMP && cl->cmds[cl->cmds_c].proc_opt <= DCOL)
     {cl->cmds[cl->cmds_c].cmd_opt = PRC;}
 
-    FREE(currcom)
+    free(currcom);
     CHECK_EXIT_CODE
 }
-
-
-
 
 /* increase the number of given commands, clear the line where the previous command was */
 void prep_for_next_cmd(carr_t *cmd, int *cmds_c, const int *pos, const int *arglen)
@@ -2183,15 +1845,10 @@ void prep_for_next_cmd(carr_t *cmd, int *cmds_c, const int *pos, const int *argl
     carr_clear(cmd);
 }
 
-
 /* Pocess cmdm, check if the cmd have ben initialized and call function to process the table or change an
  * exit_code */ // TODO написать нормаьную документацию
 void process_cmd(cl_t *cl, tab_t *t, int *exit_code)
 {
-#ifdef CMDS
-    printf("\nPROCESS_CMD\n     %d  command opt = %s command = %s \n",
-           __LINE__, print_cmd_opt(cl->cmds[cl->cmds_c].cmd_opt), print_opt(cl->cmds[cl->cmds_c].proc_opt));
-#endif
     /* expand tab to fit the selection */
     expand_tab(t, cl->cmds[cl->cmds_c].row_2, cl->cmds[cl->cmds_c].col_2, exit_code);
     CHECK_EXIT_CODE
@@ -2199,17 +1856,10 @@ void process_cmd(cl_t *cl, tab_t *t, int *exit_code)
     switch(cl->cmds[cl->cmds_c].cmd_opt)
     {
         case SEL: /* selection is already set in the functinon */
-            process_sel(cl,t, exit_code);
-#ifdef CMDS
-            printf("\n     %d cursel: [%d,%d,%d,%d]\n", __LINE__, cl->cmds[cl->currsel].row_1,
-                   cl->cmds[cl->currsel].col_1,
-                   cl->cmds[cl->currsel].row_2,
-                   cl->cmds[cl->currsel].col_2
-            );
-#endif
+            process_sel(cl, t, exit_code);
             break;
 
-        /* call a process_table() function that caalls one of inicialized functions for processing the table  */
+            /* call a process_table() function that caalls one of inicialized functions for processing the table  */
         case PRC:
             process_table(cl, t, exit_code);
             break;
@@ -2241,10 +1891,6 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
     cell_trim(cmd, exit_code); /* trim a command */ // TODO seems it is unneccesary
     CHECK_EXIT_CODE
 
-#ifdef SELECT
-    printf("\nINIT_CMD\n     %d  cmd = \"%s\", cmd number = %d\n", __LINE__, cmd->elems_v, cl->cmds_c);
-#endif
-
     /* edit structure of the table or change current selection */
     if(strchr(cmd->elems_v, ' ') == NULL)
     {
@@ -2269,9 +1915,7 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
  */
 void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
 {
-#ifdef CMDS
-    printf("\nINIT_CMDS\n");
-#endif
+
     //region variables
     int arglen = (int)strlen(arg);
     bool quoted = false;
@@ -2282,7 +1926,7 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
     cl->cellsel = (cl->cmds_c = 0);
 
     /* set a selection to the first cell(by default) */
-    set_sel(cl,1, 1, 1, 1, exit_code, RCCELL);
+    set_sel(cl, 1, 1, 1, 1, exit_code, RCCELL);
 
     /* current command(0) is a selection */
     cl->cmds[cl->cmds_c].cmd_opt = SEL;
@@ -2318,7 +1962,7 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
 
             prep_for_next_cmd(cmd, &cl->cmds_c, &p, &arglen);
         }
-        /* if there is a backslash in the command */
+            /* if there is a backslash in the command */
         else if(arg[p] == '\\')
         {
             /* dont add a backslash if it is already escaped */
@@ -2328,19 +1972,16 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
                 a_carr(cmd, arg[p], exit_code);
             }
             NEG(backslashed)
-        }
-
-        else if(arg[p] == '\"')
+        } else if(arg[p] == '\"')
         {
             if(backslashed)
             {
                 a_carr(cmd, '\\', exit_code);
                 a_carr(cmd, arg[p], exit_code);
                 NEG(backslashed)
-            }else{ NEG(quoted)}
-        }
-
-        else if((arg[p] == '[' || arg[p] == ']'))
+            } else
+            {NEG(quoted)}
+        } else if((arg[p] == '[' || arg[p] == ']'))
         {
             if(backslashed)
             {
@@ -2351,10 +1992,10 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
             {
                 a_carr(cmd, arg[p], exit_code);
             }
-        }
-        else
+        } else
         {
-            if(backslashed){NEG(backslashed)}
+            if(backslashed)
+            {NEG(backslashed)}
             a_carr(cmd, arg[p], exit_code);
         }
 
@@ -2406,12 +2047,6 @@ void init_separators(const int argc, const char **argv, cl_t *cl, int *exit_code
         *exit_code = W_SEPARATORS_ERR;
         CHECK_EXIT_CODE
     }
-#ifdef SEPSBUG
-    printf("line %d separators -> ", __LINE__);
-    for(int i = 0; i < cl->seps.elems_c; i++ )
-        printf("%c",cl->seps.elems_v[i]);
-    putchar(10);
-#endif
 }
 //endregion
 
@@ -2431,13 +2066,12 @@ void parse_cl_proc_tab(const int *argc, const char **argv, tab_t *t, cl_t *cl, i
     if(clarg == *argc - 1)
     {
         *exit_code = VAL_UNSUPARG_ERR;
-        error_line_global = __LINE__;
         return;
     }
 
     /* copy an argument to the array and call the function for it */
     init_cmds(&cmd, argv[clarg], cl, t, exit_code);
-    FREE(cmd.elems_v)
+    free(cmd.elems_v);
     CHECK_EXIT_CODE
 }
 
@@ -2459,7 +2093,7 @@ void print_error_message(const int *exit_code)
             };
 
     /* print an error message to stderr */
-    fprintf(stderr, "Error %d: %s occured on the line %d.\n", *exit_code, error_msg[*exit_code - 1], error_line_global);
+    fprintf(stderr, "Error %d: %s occured on the line %d.\n", *exit_code, error_msg[*exit_code - 1]);
 }
 
 void prepare_tab_bef_printing(carr_t *seps, tab_t *t, int *exit_code)
@@ -2506,7 +2140,7 @@ int run_program(const int argc, const char **argv)
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
     /* beautify the table */
-    prepare_tab_bef_printing(&cl.seps, &t,&exit_code);
+    prepare_tab_bef_printing(&cl.seps, &t, &exit_code);
 
     print_tab(&t, &cl.seps, cl.ptr);
 
