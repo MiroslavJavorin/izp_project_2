@@ -1114,7 +1114,8 @@ void write_tab_to_struct(cl_t *cl, tab_t *t, int *exit_code)
         CHECK_EXIT_CODE
         t->isempty = false;
     }
-    /* it means file is empty */
+
+    /* it means file was empty */
     if(t->row_c == -1)
     {
         t->row_c = 0;
