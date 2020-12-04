@@ -562,6 +562,8 @@ void quote_cell(carr_t *seps, carr_t *cell, int *exit_code)
     /* if there is a separator in the cell */
     for(int j = 0; j <= seps->elems_c; j++)
     {
+        /* if there will be troubles with project evaluation because of the quotation marks and backslashes show the line below */
+        //if((strchr(cell->elems_v, seps->elems_v[j]) != NULL && seps->elems_v[j]) || strchr(cell->elems_v, '\\') != NULL || strchr(cell->elems_v, '\"') != NULL)
         if(strchr(cell->elems_v, seps->elems_v[j]) != NULL && seps->elems_v[j])
         {
             cell->len += 2; /* 2 for quotermarks at the beginning and at the end */
@@ -1164,7 +1166,7 @@ void len_f(cl_t *cl, tab_t *t, int *exit_code)
 #define r cl->cmds[cl->cellsel].row_1
 #define c cl->cmds[cl->cellsel].col_1
 #define row_topast (cl->cmds[cl->cmds_c].row_1 - 1)
-#define col_topast (cl->cmds[cl->cmds_c].row_1 - 1)
+#define col_topast (cl->cmds[cl->cmds_c].col_1 - 1)
 
     sprintf(cl->cmds[cl->cmds_c].pttrn, "%d", (int)strlen(t->rows_v[r - 1].cols_v[c - 1].elems_v));
     carr_overwrite(&t->rows_v[row_topast].cols_v[col_topast], cl->cmds[cl->cmds_c].pttrn, exit_code);
@@ -1183,7 +1185,7 @@ void count_f(cl_t *cl, tab_t *t, int *exit_code)
 #define c1 cl->cmds[cl->currsel].col_1
 #define c2 cl->cmds[cl->currsel].col_2
 #define row_topast (cl->cmds[cl->cmds_c].row_1 - 1)
-#define col_topast (cl->cmds[cl->cmds_c].row_1 - 1)
+#define col_topast (cl->cmds[cl->cmds_c].col_1 - 1)
     int nempties = 0;
 
     for(int r = r1 - 1; r < r2; r++)
@@ -1226,16 +1228,25 @@ void avg_sum_f(cl_t *cl, tab_t *t, int *exit_code)
 #define c_to cl->cmds[cl->currsel].col_2
 
     int numcels = 0;
-    float result = 0;
+    double result = 0;
+    char *junk = NULL;
+    double tmp_res = 0;
+
+    /* it could be done better but unfortunatelly i had no time at all */
     for(int r = r_fr - 1; r < r_to; r++)
     {
         for(int c = c_fr - 1; c < c_to; c++)
         {
-            if(t->rows_v[r].cols_v[c].isnum)
+            tmp_res = strtod(t->rows_v[r].cols_v[c].elems_v, &junk);
+
+            /* if the cell is not empty and there was no string iin the cell*/
+            if(!junk[0] && t->rows_v[r].cols_v[c].elems_v[0])
             {
+                result += tmp_res;
                 numcels++;
-                result += (float)strtod(t->rows_v[r].cols_v[c].elems_v, NULL);
+                //result += (float)strtod(t->rows_v[r].cols_v[c].elems_v, NULL);
             }
+            tmp_res = 0;
         }
     }
 
@@ -1401,7 +1412,6 @@ void clear_f(int r1, int c1, int r2, int c2, tab_t *t)
 /* inserts one blank row to the left/right of the selected cells */
 void irow_arow_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
 {
-
     int upper_b = 0;
     if(opt == IROW)
     {
