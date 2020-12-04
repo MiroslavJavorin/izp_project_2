@@ -793,7 +793,7 @@ void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
 }
 
 /**
- *  Add a cell to the row // TODO
+ *  Add a cell to the row
  * @return see abowe in get_retval_opt enum
  */
 gcr_retval_opt get_cell(carr_t *col, cl_t *cl, int *exit_code)
@@ -971,7 +971,7 @@ void get_table(const int argc, const char **argv, tab_t *t, cl_t *cl, int *exit_
 //region functions
 
 /**
- *  Тhe project specification says that this function only works with one cell.
+ *  The project specification says that this function only works with one cell.
  *   I could misunderstand the interpretation of the task, so I imlemented set_second function
  *   that will insert the pattern into all cells from the selection instead of only one
  *
@@ -1474,7 +1474,7 @@ void delete_table(tab_t *t)
     t->deleted = true;
 }
 
-void drow_f(cl_t *cl, tab_t *t, int *exit_code) //FIXME testme
+void drow_f(cl_t *cl, tab_t *t, int *exit_code)
 {
     int from = cl->cmds[cl->currsel].row_1;
     int to = cl->cmds[cl->currsel].row_2;
@@ -1891,7 +1891,7 @@ void prep_for_next_cmd(carr_t *cmd, int *cmds_c, const int *pos, const int *argl
 }
 
 /* Pocess cmdm, check if the cmd have ben initialized and call function to process the table or change an
- * exit_code */ // TODO написать нормаьную документацию
+ * exit_code */
 void process_cmd(cl_t *cl, tab_t *t, int *exit_code)
 {
     /* expand tab to fit the selection */
@@ -2095,7 +2095,7 @@ void init_separators(const int argc, const char **argv, cl_t *cl, int *exit_code
 }
 //endregion
 
-/** TODO add the ability to extract cmds from a file
+/**
  * calls a function to parse cmdline arguments
  */
 void parse_cl_proc_tab(const int *argc, const char **argv, tab_t *t, cl_t *cl, int *exit_code)
