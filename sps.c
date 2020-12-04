@@ -391,7 +391,7 @@ void table_ctor(tab_t *t, int rows, int cols, int cel_len, int *exit_code)
  */
 void add_rows(tab_t *t, int r2, int *exit_code)
 {
-    if(r2 - 1 > t->row_c)
+    if(r2 > t->len)
     {
         /* allocate new memory for rows */
         t->rows_v = (row_t *)realloc(t->rows_v, r2 * sizeof(row_t));
@@ -404,7 +404,7 @@ void add_rows(tab_t *t, int r2, int *exit_code)
         {
             row_ctor(&t->rows_v[r], t->col_c + 1, MEMBLOCK, exit_code);
             CHECK_EXIT_CODE
-            t->rows_v[r].cols_c = t->col_c + 1;
+            t->rows_v[r].cols_c = t->col_c;
         }
         t->row_c = t->len - 1;
     }
@@ -432,8 +432,9 @@ void add_cols(tab_t *t, int c2, int *exit_code)
                 CHECK_EXIT_CODE
             }
             t->rows_v[r].cols_c = t->rows_v[r].len - 1;
+
+            //	t->col_c = t->rows_v[r].len - 1; /* now all rows have len of max col len */
         }
-        t->col_c = t->rows_v[r].len - 1; /* now all rows have len of max col len */
     }
 }
 
@@ -1400,7 +1401,7 @@ void clear_f(int r1, int c1, int r2, int c2, tab_t *t)
 /* inserts one blank row to the left/right of the selected cells */
 void irow_arow_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
 {
-    CHECK_TAB_DELETED
+
     int upper_b = 0;
     if(opt == IROW)
     {
@@ -2127,7 +2128,7 @@ void print_error_message(const int *exit_code)
             {
                     "Cannot allocate/reallocate memoory",
                     "Entered separators are not supported by the program",
-                    "You've entered wrong number of arguments",
+                    "You've entered wrong arguments",
                     "Cmd you've entered has unsupported value",
                     "Unrecognized argument in the commandline",
                     "There is no file with this name",
