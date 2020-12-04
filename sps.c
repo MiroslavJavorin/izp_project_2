@@ -49,6 +49,8 @@
 #define NUM_TMP_SELS 10 /* max number of temo selections */
 
 #define NEG(n) ((n) = !(n)); /* negation of bool value */
+
+#define CHECK_TAB_DELETED if(t->deleted){NEG(t->deleted)}
 //endregion
 
 //region enums
@@ -1141,6 +1143,18 @@ void inc_f(cl_t *cl, tab_t *t, int *exit_code)
 #undef pos
 }
 
+void carr_overwrite(carr_t *dst, char *src, int *exit_code)
+{
+    carr_clear(dst);
+    int len = (int)strlen(src);
+
+    for(int i = 0; i < len; i++)
+    {
+        a_carr(dst, src[i], exit_code);
+        CHECK_EXIT_CODE
+    }
+}
+
 /**
  * len [R, C] - stores the string length of the currently selected cell in the cell on row R and column C.
  */
@@ -1148,11 +1162,15 @@ void len_f(cl_t *cl, tab_t *t, int *exit_code)
 {
 #define r cl->cmds[cl->cellsel].row_1
 #define c cl->cmds[cl->cellsel].col_1
+#define row_topast (cl->cmds[cl->cmds_c].row_1 - 1)
+#define col_topast (cl->cmds[cl->cmds_c].row_1 - 1)
 
     sprintf(cl->cmds[cl->cmds_c].pttrn, "%d", (int)strlen(t->rows_v[r - 1].cols_v[c - 1].elems_v));
-    set_f(t, cl, exit_code);
+    carr_overwrite(&t->rows_v[row_topast].cols_v[col_topast], cl->cmds[cl->cmds_c].pttrn, exit_code);
     CHECK_EXIT_CODE
 
+#undef row_topast
+#undef col_topast
 #undef r
 #undef c
 }
@@ -1163,6 +1181,8 @@ void count_f(cl_t *cl, tab_t *t, int *exit_code)
 #define r2 cl->cmds[cl->currsel].row_2
 #define c1 cl->cmds[cl->currsel].col_1
 #define c2 cl->cmds[cl->currsel].col_2
+#define row_topast (cl->cmds[cl->cmds_c].row_1 - 1)
+#define col_topast (cl->cmds[cl->cmds_c].row_1 - 1)
     int nempties = 0;
 
     for(int r = r1 - 1; r < r2; r++)
@@ -1177,8 +1197,10 @@ void count_f(cl_t *cl, tab_t *t, int *exit_code)
     }
 
     sprintf(cl->cmds[cl->cmds_c].pttrn, "%d", nempties);
-    set_f(t, cl, exit_code);
+    carr_overwrite(&t->rows_v[row_topast].cols_v[col_topast], cl->cmds[cl->cmds_c].pttrn, exit_code);
     CHECK_EXIT_CODE
+#undef row_topast
+#undef col_topast
 #undef r1
 #undef r2
 #undef c1
@@ -1195,12 +1217,18 @@ void count_f(cl_t *cl, tab_t *t, int *exit_code)
  */
 void avg_sum_f(cl_t *cl, tab_t *t, int *exit_code)
 {
+#define row_topast (cl->cmds[cl->cmds_c].row_1 - 1)
+#define col_topast (cl->cmds[cl->cmds_c].col_1 - 1)
+#define r_fr cl->cmds[cl->currsel].row_1
+#define r_to cl->cmds[cl->currsel].row_2
+#define c_fr cl->cmds[cl->currsel].col_1
+#define c_to cl->cmds[cl->currsel].col_2
+
     int numcels = 0;
     float result = 0;
-
-    for(int r = cl->cmds[cl->currsel].row_1 - 1; r < cl->cmds[cl->currsel].row_2; r++)
+    for(int r = r_fr - 1; r < r_to; r++)
     {
-        for(int c = cl->cmds[cl->currsel].col_1 - 1; c < cl->cmds[cl->currsel].col_2; c++)
+        for(int c = c_fr - 1; c < c_to; c++)
         {
             if(t->rows_v[r].cols_v[c].isnum)
             {
@@ -1222,7 +1250,15 @@ void avg_sum_f(cl_t *cl, tab_t *t, int *exit_code)
     {
         cl->cmds[cl->cmds_c].pttrn[0] = '0';
     }
-    set_f(t, cl, exit_code);
+
+    carr_overwrite(&t->rows_v[row_topast].cols_v[col_topast], cl->cmds[cl->cmds_c].pttrn, exit_code);
+    CHECK_EXIT_CODE
+#undef r_fr
+#undef r_to
+#undef c_fr
+#undef c_to
+#undef row_topast
+#undef col_topast
 }
 
 
@@ -1237,6 +1273,7 @@ void swap_f(cl_t *cl, tab_t *t)
 #define r1 (cl->cmds[cl->cmds_c].row_1 - 1)
 #define c1 (cl->cmds[cl->cmds_c].col_1 - 1)
 
+    if(t->deleted) return;
     char *tmp = t->rows_v[r].cols_v[c].elems_v;
     int tempum = t->rows_v[r].cols_v[c].len;
     //int elems_c = t->rows_v[r].cols_v[c].elems_c;
@@ -1260,6 +1297,7 @@ void swap_f(cl_t *cl, tab_t *t)
 
 void min_max_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
 {
+    if(t->deleted) return;
     /* start */
     int r = cl->cmds[cl->currsel].row_1 - 1;
 
@@ -1317,6 +1355,7 @@ void min_max_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
 /* in an existing cell selection, selects the first cell whose value contains the substring STR */
 void find_f(cl_t *cl, tab_t *t, int *exit_code)
 {
+    if(t->deleted) return;
     int r = cl->cmds[cl->currsel].row_1 - 1;
 
     /* walk through all selected rows and columns */
@@ -1361,6 +1400,7 @@ void clear_f(int r1, int c1, int r2, int c2, tab_t *t)
 /* inserts one blank row to the left/right of the selected cells */
 void irow_arow_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
 {
+    CHECK_TAB_DELETED
     int upper_b = 0;
     if(opt == IROW)
     {
@@ -1381,12 +1421,10 @@ void irow_arow_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
     }
     t->len++;
     t->row_c++;
-#ifdef CMDS
-    printf("\nIROW_AROW_F\n     %d  t->col_c %d\n", __LINE__,t->col_c);
-#endif
 
     /* create a row */
-    row_ctor(&t->rows_v[upper_b], (t->col_c < 2) ? 1 : t->col_c - 1, MEMBLOCK, exit_code);
+    row_ctor(&t->rows_v[upper_b], t->col_c + 1, MEMBLOCK, exit_code);
+    t->rows_v[upper_b].cols_c = t->col_c;
     CHECK_EXIT_CODE
 }
 
@@ -1394,6 +1432,8 @@ void irow_arow_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
 void icol_acol_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
 {
     int left_b = 0; /* declare a left border */
+
+    CHECK_TAB_DELETED
 
     /* initialize a left border */
     if(opt == ICOL)
@@ -1482,8 +1522,11 @@ void drow_f(cl_t *cl, tab_t *t, int *exit_code) //FIXME testme
 /* in an existing selection, it finds the cell with the min/max numeric value and sets the selection to it */
 void dcol_f(cl_t *cl, tab_t *t)
 {
+#define c_from cl->cmds[cl->currsel].col_1
+#define c_to cl->cmds[cl->currsel].col_2
+
     /* Tn the first option, a whole row is about to be deleted */
-    if(cl->cmds[cl->currsel].col_1 == 1 && cl->cmds[cl->currsel].col_2 >= t->col_c + 1)
+    if(c_from == 1 && c_to >= t->col_c + 1)
     {
         delete_table(t);
     }
@@ -1491,9 +1534,6 @@ void dcol_f(cl_t *cl, tab_t *t)
         /* Remove not all columns */
     else
     {
-        int c_from = cl->cmds[cl->currsel].col_1;
-        int c_to = cl->cmds[cl->currsel].col_2;
-
         int diff = 0;
 
         /* walk through all rows from the end */
@@ -1518,6 +1558,9 @@ void dcol_f(cl_t *cl, tab_t *t)
         t->col_c -= diff; /* change number of columns in the table */
     }
 }
+
+#undef c_from
+#undef c_to
 //endregion
 
 
@@ -1558,6 +1601,8 @@ void process_sel(cl_t *cl, tab_t *t, int *exit_code)
  */
 void process_table(cl_t *cl, tab_t *t, int *exit_code)
 {
+    if(cl->cmds[cl->cmds_c].proc_opt != DCOL && cl->cmds[cl->cmds_c].proc_opt != DROW)
+    {CHECK_TAB_DELETED}
     /* determine the length of the cell from one cell and write it in to another cell */
     if(cl->cmds[cl->cmds_c].proc_opt == LEN)
     {len_f(cl, t, exit_code);}
@@ -1626,7 +1671,7 @@ void add_ptrn(carr_t *cmd, char *arr, char *ptrn, int *exit_code)
     }
 }
 
-/* TODO documentation */
+
 void extract_nums(cl_t *cl, char n_extr_nums[PTRNLEN], int *exit_code)
 {
     char *token = NULL;
@@ -1705,15 +1750,15 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
 
     /** SELECTION **/
     /* functinos for working with temporary variables */
-    if(!strncmp("def ", cmd->elems_v, strlen("def ")))
+    if(!strncmp("def _", cmd->elems_v, strlen("def _")))
     {
         cl->cmds[cl->cmds_c].proc_opt = DEF;
         add_ptrn(cmd, n_extr_nums, "def _", exit_code);
-    } else if(!strncmp("use ", cmd->elems_v, strlen("use ")))
+    } else if(!strncmp("use _", cmd->elems_v, strlen("use _")))
     {
         cl->cmds[cl->cmds_c].proc_opt = USE;
         add_ptrn(cmd, n_extr_nums, "use _", exit_code);
-    } else if(!strncmp("inc ", cmd->elems_v, strlen("inc ")))
+    } else if(!strncmp("inc _", cmd->elems_v, strlen("inc _")))
     {
         cl->cmds[cl->cmds_c].proc_opt = INC;
         add_ptrn(cmd, n_extr_nums, "inc _", exit_code);
@@ -1722,7 +1767,7 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
     else if(!strncmp("find ", cmd->elems_v, strlen("find ")))
     {
         cl->cmds[cl->cmds_c].proc_opt = FIND;
-        add_ptrn(cmd, cl->cmds[cl->cmds_c].pttrn, "set ", exit_code);
+        add_ptrn(cmd, cl->cmds[cl->cmds_c].pttrn, "find ", exit_code);
         CHECK_EXIT_CODE
     }
 
@@ -1888,7 +1933,7 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
     /* fill everyrhing with 0s */
     create_cmd(&cl->cmds[cl->cmds_c]);
 
-    cell_trim(cmd, exit_code); /* trim a command */ // TODO seems it is unneccesary
+    cell_trim(cmd, exit_code); /* trim a command */ //
     CHECK_EXIT_CODE
 
     /* edit structure of the table or change current selection */
