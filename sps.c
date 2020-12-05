@@ -124,7 +124,7 @@ typedef enum
     CHANGESEL,
 
     DEF, USE, INC, FIND,
-    MIN, MAX, SETTMP,
+    MIN, MAX, SETTMP, USETMP,
 
     SET, CLEAR, IROW, AROW, DROW, ICOL, ACOL, DCOL,
     SWAP, AVG, SUM, COUNT, LEN,
@@ -1023,6 +1023,12 @@ void set_tmp_f(cl_t *cl)
     cl->bufsel = cl->currsel; /* save the current selection to the buffer selection */
 }
 
+/* If there was no window selection, aoutomatically use the first selection [1,1]*/
+void use_tmp_f(cl_t *cl)
+{
+    cl->currsel = cl->bufsel;
+}
+
 /**
  * define a tepm selection
  */
@@ -1244,9 +1250,7 @@ void avg_sum_f(cl_t *cl, tab_t *t, int *exit_code)
             {
                 result += tmp_res;
                 numcels++;
-                //result += (float)strtod(t->rows_v[r].cols_v[c].elems_v, NULL);
             }
-            tmp_res = 0;
         }
     }
 
@@ -1605,6 +1609,10 @@ void process_sel(cl_t *cl, tab_t *t, int *exit_code)
         /* set current selection to the buffsel which is a buffer selection ."temp_sel" has been already occupied */
     else if(cl->cmds[cl->cmds_c].proc_opt == SETTMP)
     {set_tmp_f(cl);}
+
+        /* set buffered selection _ to the current selection */
+    else if(cl->cmds[cl->cmds_c].proc_opt == USETMP)
+    {use_tmp_f(cl);}
 }
 
 /**
@@ -1872,7 +1880,7 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
     {cl->cmds[cl->cmds_c].proc_opt = SETTMP;}
         /* revert back the selection that was before the temporary selection was applied */
     else if(!strcmp(cmd->elems_v, "_"))
-    {cl->currsel = cl->bufsel;}
+    {cl->cmds[cl->cmds_c].proc_opt = USETMP;}
 
         /* if there's a selection cmd sets a new current selection */
     else
@@ -1881,10 +1889,10 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
         cl->cmds[cl->cmds_c].cmd_opt = SEL;
         cl->cmds[cl->cmds_c].proc_opt = CHANGESEL;
     }
-    if(cl->cmds[cl->cmds_c].proc_opt >= MIN && cl->cmds[cl->cmds_c].proc_opt <= MAX)
+    if(cl->cmds[cl->cmds_c].proc_opt >= MIN && cl->cmds[cl->cmds_c].proc_opt <= USETMP)
     {cl->cmds[cl->cmds_c].cmd_opt = SEL;}
 
-    else if(cl->cmds[cl->cmds_c].proc_opt >= SETTMP && cl->cmds[cl->cmds_c].proc_opt <= DCOL)
+    else if(cl->cmds[cl->cmds_c].proc_opt >= SET && cl->cmds[cl->cmds_c].proc_opt <= DCOL)
     {cl->cmds[cl->cmds_c].cmd_opt = PRC;}
 
     free(currcom);
@@ -2042,7 +2050,7 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
             if(backslashed)
             {
                 a_carr(cmd, arg[p], exit_code);
-                NEG(backslashed);
+                NEG(backslashed)
             }
             if(quoted)
             {
@@ -2198,6 +2206,7 @@ int run_program(const int argc, const char **argv)
     /* beautify the table */
     prepare_tab_bef_printing(&cl.seps, &t, &exit_code);
 
+
     print_tab(&t, &cl.seps, cl.ptr);
 
     clear_data(&t, &cl);
@@ -2216,6 +2225,7 @@ void print_documentation()
 
 int main(const int argc, const char **argv)
 {
+
     /* print documentation */
     if(argc == 2 && (!strcmp(argv[1], "-h") || !strcmp(argv[1], "--help")))
     {
