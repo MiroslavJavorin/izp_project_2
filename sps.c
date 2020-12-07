@@ -45,6 +45,7 @@
 }
 
 #define MEMBLOCK     10 /* allocation step */
+#define CMDSCOUNT   1001
 #define PTRNLEN      1001
 #define NUM_TMP_SELS 10 /* max number of temo selections */
 
@@ -105,7 +106,8 @@ enum erorrs
     LEN_UNSUPCMD_ERR,     /* unsupported len of the cmd   */
     UNREC_CMD_ERR,        /* unrecognized command */
     UNDEF_TMPCMD_ERR,     /* indefined temp command */
-    BAD_INPUTFILE_ERR     /* if quotes dont match in the file or newlin/EOF is backslashed */
+    BAD_INPUTFILE_ERR,    /* if quotes dont match in the file or newlin/EOF is backslashed */
+    TOO_MUCH_CMDS_ERR     /* represends error caused by a exceed number of commands( > max number of commands )*/
 };
 
 enum argpos
@@ -1911,26 +1913,29 @@ void prep_for_next_cmd(carr_t *cmd, int *cmds_c, const int *pos, const int *argl
 
 /* Pocess cmdm, check if the cmd have ben initialized and call function to process the table or change an
  * exit_code */
-void process_cmd(cl_t *cl, tab_t *t, int *exit_code)
+void process_cmds(cl_t *cl, tab_t *t, int *exit_code)
 {
-    /* expand tab to fit the selection */
-    expand_tab(t, cl->cmds[cl->cmds_c].row_2, cl->cmds[cl->cmds_c].col_2, exit_code);
-    CHECK_EXIT_CODE
-
-    switch(cl->cmds[cl->cmds_c].cmd_opt)
+    /* process each initialized command */
+    for(int cmd = 0; cmd <= cl->cmds_c; cmd++)
     {
-        case SEL: /* selection is already set in the functinon */
-            process_sel(cl, t, exit_code);
-            break;
+        /* expand tab to fit the selection if it is neccessary */
+        expand_tab(t, cl->cmds[cl->cmds_c].row_2, cl->cmds[cl->cmds_c].col_2, exit_code);
+        CHECK_EXIT_CODE
+        switch(cl->cmds[cl->cmds_c].cmd_opt)
+        {
+            case SEL: /* selection is already set in the functinon */
+                process_sel(cl, t, exit_code);
+                break;
 
-            /* call a process_table() function that caalls one of inicialized functions for processing the table  */
-        case PRC:
-            process_table(cl, t, exit_code);
-            break;
+                /* call a process_table() function that caalls one of inicialized functions for processing the table  */
+            case PRC:
+                process_table(cl, t, exit_code);
+                break;
 
-        case NOPT:
-            *exit_code = ARG_UNRECARG_ERR;
-            CHECK_EXIT_CODE
+            case NOPT:
+                *exit_code = ARG_UNRECARG_ERR;
+                CHECK_EXIT_CODE
+        }
     }
 }
 
@@ -1999,16 +2004,21 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
     cl->cmds_c = 1;
     cl->temps_c = 0;
 
-    /* create all temp selection commands */
+    /* declare and fill with 0s all temp selection commands */
     for(int i = 0; i < NUM_TMP_SELS; i++)
     {
         create_cmd(&cl->tmpsel[i]);
     }
     //endregion
 
-    /* walk through other tokens */
+    /* walk through commands */
     for(int p = 0; p < arglen; p++)
     {
+        if(cl->cmds_c == CMDSCOUNT)
+        {
+            *exit_code = TOO_MUCH_CMDS_ERR;
+        }
+
         if((arg[p] == ';' && !backslashed && !quoted) || p == arglen - 1)
         {
             if(arg[p] != ';' && arg[p] != ']')
@@ -2018,10 +2028,6 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
 
             /* initialize a cmd */
             init_cmd(cmd, t, cl, exit_code);
-            CHECK_EXIT_CODE
-
-            /* process an initialized cmd */
-            process_cmd(cl, t, exit_code);
             CHECK_EXIT_CODE
 
             prep_for_next_cmd(cmd, &cl->cmds_c, &p, &arglen);
@@ -2117,7 +2123,7 @@ void init_separators(const int argc, const char **argv, cl_t *cl, int *exit_code
 /**
  * calls a function to parse cmdline arguments
  */
-void parse_cl_proc_tab(const int *argc, const char **argv, tab_t *t, cl_t *cl, int *exit_code)
+void process_cl_args(const int *argc, const char **argv, tab_t *t, cl_t *cl, int *exit_code)
 {
     /* by default has value 1, which means there was no delim in the cmd line */
     int clarg = (cl->defaultsep) ? POSNDEL : POSWDEL;
@@ -2153,7 +2159,8 @@ void print_error_message(const int *exit_code)
                     "Unsupported length of the command",
                     "Unrecognized command",
                     "Working with undefined temporary command",
-                    "Bad input file"
+                    "Bad input file",
+                    "Too much coommands entered in the commandline"
             };
 
     /* print an error message to stderr */
@@ -2200,13 +2207,17 @@ int run_program(const int argc, const char **argv)
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
     /* parse cmdline arguments and process table for them */
-    parse_cl_proc_tab(&argc, argv, &t, &cl, &exit_code);
+    process_cl_args(&argc, argv, &t, &cl, &exit_code);
+    CHECK_EXIT_CODE_IN_RUN_PROGRAM
+
+    /* call functions extracted from commandline */
+    process_cmds(&cl, &t, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
     /* beautify the table */
     prepare_tab_bef_printing(&cl.seps, &t, &exit_code);
 
-
+    /* write table to the file */
     print_tab(&t, &cl.seps, cl.ptr);
 
     clear_data(&t, &cl);
