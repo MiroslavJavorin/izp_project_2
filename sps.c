@@ -44,10 +44,14 @@
     GRC_CHECK_EXIT_CODE\
 }
 
+#define ISIN_SELRANGE(opt) ( ((opt) >= CLEAR  && (opt) <= SET) ? true : false )
+#define ISIN_PROCRANGE(opt) ( (!ISIN_SELRANGE((opt)) && (opt) != NOTH) ? true : false )
+
 #define MEMBLOCK     10 /* allocation step */
-#define CMDSCOUNT   1001
+#define CMDSCOUNT    1001
 #define PTRNLEN      1001
 #define NUM_TMP_SELS 10 /* max number of temo selections */
+#define TAB_EDGE     -42 /* represents the edge of the table */
 
 #define NEG(n) ((n) = !(n)); /* negation of bool value */
 
@@ -60,15 +64,6 @@ typedef enum
     NCOLS,
     WCOLS
 } rtrim_opt; /* row trim option for trimming function */
-
-/* enum that is argument for a function set_sel() to avoid error messages if given selection looks like [R,C] */
-typedef enum
-{
-    RCRC,
-    RCCELL,
-    RCEXCEPT,
-    NOSELOPT
-} sel_opt;
 
 /* option if return value of getcell function */
 typedef enum
@@ -123,13 +118,12 @@ enum argpos
 typedef enum
 {
     NOTH,
-    CHANGESEL,
 
-    DEF, USE, INC, FIND,
-    MIN, MAX, SETTMP, USETMP,
+    DEF, USE, INC,
+    CHANGESEL, MIN, MAX, SETTMP, USETMP,
 
-    SET, CLEAR, IROW, AROW, DROW, ICOL, ACOL, DCOL,
-    SWAP, AVG, SUM, COUNT, LEN,
+    CLEAR, IROW, AROW, DROW, ICOL, ACOL, DCOL,
+    SWAP, AVG, SUM, COUNT, LEN, FIND, SET,
 } opts_t;
 
 /* enum with comand options */
@@ -139,6 +133,16 @@ typedef enum
     SEL,
     PRC,
 } cmd_opt_t;
+
+
+/* enum that is argument for a function set_sel() to avoid error messages if given selection looks like [R,C] */
+typedef enum
+{
+    RCRC,
+    RCCELL,
+    RCEXCEPT,
+    NOSELOPT
+} sel_opt_t;
 //endregion
 
 
@@ -159,6 +163,7 @@ typedef struct
     /* upper row, left column, lower row, right column */
     int row_1, col_1, row_2, col_2;
     cmd_opt_t cmd_opt; /* defines processing option or selection option */
+    sel_opt_t sel_opt;
 
     opts_t proc_opt;
     char pttrn[PTRNLEN];   /* if there's a pattern in the cmd */
@@ -169,13 +174,14 @@ typedef struct
 /* contains information about arguments user entered in cmdline */
 typedef struct
 {
+    char *fname;
     carr_t seps;
     bool defaultsep; /* means ' ' is used as a separator */
 
     FILE *ptr;
 
     /* arguments themselfs */
-    cmd_t cmds[1001]; /* array with all cmds(for functions goto etc) */
+    cmd_t cmds[CMDSCOUNT]; /* array with all cmds(for functions goto etc) */
     int currsel;      /* index of the current selectinon */
     int cellsel;      /* index of the current cell seleciton */
     int bufsel;
@@ -206,23 +212,26 @@ typedef struct
 //endregion
 
 
-void print_tab(tab_t *t, carr_t *seps, FILE *ptr)
+void print_tab(tab_t *t, carr_t *seps, cl_t *cl)
 {
     if(t->deleted || t->isempty)
         return;
+
+    /* reopen the file to start overwiting */
+    freopen(cl->fname, "w", cl->ptr);
 
     for(int row = 0; row <= t->row_c; row++)
     {
         for(int col = 0; col <= t->rows_v[row].cols_c; col++)
         {
             if(col)
-            {fputc(seps->elems_v[0], ptr);}
+            {fputc(seps->elems_v[0], cl->ptr);}
 
             for(int i = 0; i < t->rows_v[row].cols_v[col].elems_c; i++)
-                fputc(t->rows_v[row].cols_v[col].elems_v[i], ptr);
+                fputc(t->rows_v[row].cols_v[col].elems_v[i], cl->ptr);
 
         }
-        putc('\n', ptr);
+        putc('\n', cl->ptr);
     }
 }
 
@@ -230,6 +239,9 @@ void print_tab(tab_t *t, carr_t *seps, FILE *ptr)
 
 void free_row(row_t *r)
 {
+#ifdef DEB
+    printf("line %d in %s r->len = %d\n", __LINE__, __FUNCTION__, r->len);
+#endif
     for(int col = r->len - 1; col >= 0; col--)
     {
         free(r->cols_v[col].elems_v);
@@ -449,7 +461,6 @@ void add_cols(tab_t *t, int c2, int *exit_code)
  */
 void expand_tab(tab_t *t, int r2, int c2, int *exit_code)
 {
-
     t->deleted = false;
 
     /* expand_rows */
@@ -665,25 +676,46 @@ void table_trim(tab_t *t, int *exit_code)
 
 //region GETTERS
 
-/* check if selection meets the conditions and set it as a current selction */
-void set_sel(cl_t *cl, int row1, int col1, int row2, int col2, int *exit_code, sel_opt opt)
+/**
+ * Set a selection to tthe command of the certain position
+ */
+void init_sel(int r1, int c1, int r2, int c2, cmd_t *cmd, sel_opt_t sel_opt)
 {
-    if(opt == RCRC)
+    cmd->sel_opt = sel_opt;
+    cmd->row_1 = r1;
+    cmd->col_1 = c1;
+    cmd->row_2 = r2;
+    cmd->col_2 = c2;
+}
+
+/* check if selection meets the conditions and set it as a current selction */
+void set_sel(cl_t *cl, tab_t *t, int row1, int col1, int row2, int col2, int cmd_n, int *exit_code) // FIXME
+{
+    if(row2 == TAB_EDGE)
+    {
+        cl->cmds[cmd_n].row_2 = t->len;
+    }
+    if(col2 == TAB_EDGE)
+    {
+        cl->cmds[cmd_n].col_2 = t->col_c + 1;
+    }
+
+    if(cl->cmds[cmd_n].sel_opt == RCRC)
     {
         /* check if the given selectinon meets the conditions */
         if(row2 < row1 || col2 < col1 ||
-           row1 < cl->cmds[cl->cellsel].row_1 ||
-           col1 < cl->cmds[cl->cellsel].col_1 ||
-           row2 < cl->cmds[cl->cellsel].row_2 ||
-           col2 < cl->cmds[cl->cellsel].col_2)
+           row1 < cl->cmds[cmd_n].row_1 ||
+           col1 < cl->cmds[cmd_n].col_1 ||
+           row2 < cl->cmds[cmd_n].row_2 ||
+           col2 < cl->cmds[cmd_n].col_2)
         {
             *exit_code = VAL_UNSUPARG_ERR;
         }
     }
-    if(opt == RCCELL)
+    if(cl->cmds[cmd_n].sel_opt == RCCELL)
     {
         cl->cellsel = cl->cmds_c;
-    } else if(opt == NOSELOPT)
+    } else if(cl->cmds[cmd_n].sel_opt == NOSELOPT)
     {
         *exit_code = VAL_UNSUPARG_ERR;
     }
@@ -693,14 +725,14 @@ void set_sel(cl_t *cl, int row1, int col1, int row2, int col2, int *exit_code, s
     cl->currsel = cl->cmds_c;
 
     /* set a selection */
-    cl->cmds[cl->currsel].row_1 = row1;
-    cl->cmds[cl->currsel].col_1 = col1;
-    cl->cmds[cl->currsel].row_2 = row2;
-    cl->cmds[cl->currsel].col_2 = col2;
+    cl->cmds[cmd_n].row_1 = row1;
+    cl->cmds[cmd_n].col_1 = col1;
+    cl->cmds[cmd_n].row_2 = row2;
+    cl->cmds[cmd_n].col_2 = col2;
 }
 
 /* returns true is newline or eof reached */
-void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
+void get_nums(carr_t *cmd, cl_t *cl, int *exit_code)
 {
     char *token = NULL;
     char *ptr = NULL;
@@ -708,7 +740,7 @@ void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
     int i = 0;
     char uscore = 0;
     char dash = 0;
-    sel_opt opt = NOSELOPT;
+    sel_opt_t opt = NOSELOPT;
 
     /* get the first token */
     token = strtok(cmd->elems_v, ",");
@@ -732,7 +764,7 @@ void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
                     *exit_code = VAL_UNSUPARG_ERR;
                 } else  /* in case of row selection */
                 {
-                    nums[i] = t->len; /* processing the last row/column*/
+                    nums[i] = TAB_EDGE; /* processing the last row/column*/
                 }
             }
 
@@ -740,15 +772,8 @@ void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
             else if(!strcmp(ptr, "_"))
             {
                 uscore++;
-                if(i == 0)
-                {
-                    nums[i] = 1;
-                    nums[i + 2] = t->len;
-                } else if(i == 1)
-                {
-                    nums[i] = 1;
-                    nums[i + 2] = t->col_c + 1;
-                }
+                if(i < 2) nums[i] = 1;
+                nums[i + 2] = TAB_EDGE;
             }
 
                 /* if there is another string literal */
@@ -793,7 +818,7 @@ void get_nums(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
     }
     CHECK_EXIT_CODE
 
-    set_sel(cl, nums[0], nums[1], nums[2], nums[3], exit_code, opt);
+    init_sel(nums[0], nums[1], nums[2], nums[3], &cl->cmds[cl->cmds_c], opt);
     CHECK_EXIT_CODE
 }
 
@@ -949,7 +974,7 @@ void write_tab_to_struct(cl_t *cl, tab_t *t, int *exit_code)
     }
 }
 
-void get_table(const int argc, const char **argv, tab_t *t, cl_t *cl, int *exit_code)
+void get_table(const int argc, char **argv, tab_t *t, cl_t *cl, int *exit_code)
 {
     if((cl->ptr = fopen(argv[argc - 1], "r")) == NULL)
     {
@@ -959,12 +984,10 @@ void get_table(const int argc, const char **argv, tab_t *t, cl_t *cl, int *exit_
         /* if file has been opened successfully */
     else
     {
+        cl->fname = argv[argc - 1];
         /* write the table to the structure */
         write_tab_to_struct(cl, t, exit_code);
         CHECK_EXIT_CODE
-
-        /* reopen the file to start overwiting */
-        freopen(argv[argc - 1], "w", cl->ptr);
 
         table_trim(t, exit_code);
         CHECK_EXIT_CODE
@@ -1038,6 +1061,10 @@ void def_f(cl_t *cl)
 {
 #define pos cl->cmds[cl->cmds_c].row_1
 
+#ifdef DEB
+    printf("line %d in %s pos_tmp = %d\n", __LINE__, __FUNCTION__, pos);
+#endif
+
     /* copy a current cell selection to the command */
     cl->tmpsel[pos].row_2 = (cl->tmpsel[pos].row_1 = cl->cmds[cl->cellsel].row_1);
     cl->tmpsel[pos].col_2 = (cl->tmpsel[pos].col_1 = cl->cmds[cl->cellsel].col_1);
@@ -1066,6 +1093,9 @@ void use_f(cl_t *cl, tab_t *t, int *exit_code)
 #define r2 cl->cmds[cl->currsel].row_2 /*      row from cell selection                    */
 #define c2 cl->cmds[cl->currsel].col_2 /*      column from cell selection                 */
 
+#ifdef DEB
+    printf("line %d in %s pos_tmp = %d\n", __LINE__, __FUNCTION__, pos_tmp);
+#endif
     /* check if the command is initialized */
     if(cl->tmpsel[pos_tmp].isinit)
     {
@@ -1116,6 +1146,9 @@ void inc_f(cl_t *cl, tab_t *t, int *exit_code)
 #define row cl->tmpsel[pos].row_1
 #define col cl->tmpsel[pos].col_1
 
+#ifdef DEB
+    printf("line %d in %s pos_tmp = %d\n", __LINE__, __FUNCTION__, pos);
+#endif
     /* check if the command is initialized */
     if(cl->tmpsel[pos].isinit)
     {
@@ -1125,7 +1158,7 @@ void inc_f(cl_t *cl, tab_t *t, int *exit_code)
         /* if cell contains a number increase it by 1*/
         if(t->rows_v[row - 1].cols_v[col - 1].isnum)
         {
-            /* extract number from the cell*/
+            /* extract number from the cell */
             float num_in_cell = (float)strtod(t->rows_v[row - 1].cols_v[col - 1].elems_v, NULL);
             num_in_cell++; /* increase the number by 1 */
             sprintf(tmpresult, "%g", num_in_cell); /* add a result to the temp string with result */
@@ -1313,7 +1346,7 @@ void swap_f(cl_t *cl, tab_t *t)
 }
 
 
-void min_max_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
+void min_max_f(cl_t *cl, tab_t *t, int opt)
 {
     if(t->deleted) return;
     /* start */
@@ -1366,12 +1399,12 @@ void min_max_f(cl_t *cl, tab_t *t, int *exit_code, int opt)
     if(targ_row != -1 && targ_col != -1)
     {
         cl->cellsel = cl->cmds_c;
-        set_sel(cl, targ_row + 1, targ_col + 1, targ_row + 1, targ_col + 1, exit_code, RCCELL);
+        init_sel(targ_row + 1, targ_col + 1, targ_row + 1, targ_col + 1, &cl->cmds[cl->cmds_c], RCCELL);
     }
 }
 
 /* in an existing cell selection, selects the first cell whose value contains the substring STR */
-void find_f(cl_t *cl, tab_t *t, int *exit_code)
+void find_f(cl_t *cl, tab_t *t)
 {
     if(t->deleted) return;
     int r = cl->cmds[cl->currsel].row_1 - 1;
@@ -1384,7 +1417,7 @@ void find_f(cl_t *cl, tab_t *t, int *exit_code)
             if(strstr(t->rows_v[r].cols_v[c].elems_v, cl->cmds[cl->cmds_c].pttrn) != NULL)
             {
                 cl->cellsel = cl->cmds_c;
-                set_sel(cl, r + 1, c + 1, r + 1, c + 1, exit_code, RCCELL);
+                init_sel(r + 1, c + 1, r + 1, c + 1, &cl->cmds[cl->cmds_c], RCCELL);
                 return;
             }
         }
@@ -1585,15 +1618,11 @@ void dcol_f(cl_t *cl, tab_t *t)
 /**
  * Call functions for processing the selection
  */
-void process_sel(cl_t *cl, tab_t *t, int *exit_code)
+void process_sel(cl_t *cl, tab_t *t, int *exit_code, int cmd)
 {
 
-    /* find first cell in the current selection contains the pattern and set cell selection on it */
-    if(cl->cmds[cl->cmds_c].proc_opt == FIND)
-    {find_f(cl, t, exit_code);}
-
-        /* define temp selection */
-    else if(cl->cmds[cl->cmds_c].proc_opt == DEF)
+    /* define temp selection */
+    if(cl->cmds[cl->cmds_c].proc_opt == DEF)
     {def_f(cl);}
 
         /* change cell selection to the temp selection */
@@ -1606,7 +1635,7 @@ void process_sel(cl_t *cl, tab_t *t, int *exit_code)
 
         /* set column in range of the selection by numerical value */
     else if(cl->cmds[cl->cmds_c].proc_opt == MIN || cl->cmds[cl->cmds_c].proc_opt == MAX)
-    {min_max_f(cl, t, exit_code, cl->cmds[cl->cmds_c].proc_opt);}
+    {min_max_f(cl, t, cl->cmds[cl->cmds_c].proc_opt);}
 
         /* set current selection to the buffsel which is a buffer selection ."temp_sel" has been already occupied */
     else if(cl->cmds[cl->cmds_c].proc_opt == SETTMP)
@@ -1615,6 +1644,12 @@ void process_sel(cl_t *cl, tab_t *t, int *exit_code)
         /* set buffered selection _ to the current selection */
     else if(cl->cmds[cl->cmds_c].proc_opt == USETMP)
     {use_tmp_f(cl);}
+
+    else if(cl->cmds[cl->cmds_c].proc_opt == CHANGESEL)
+    {
+        set_sel(cl, t, cl->cmds[cmd].row_1, cl->cmds[cmd].col_1, cl->cmds[cl->cmds_c].row_2, cl->cmds[cl->cmds_c]
+                .col_2, cl->cmds[cmd].sel_opt, exit_code);
+    }
 }
 
 /**
@@ -1622,7 +1657,10 @@ void process_sel(cl_t *cl, tab_t *t, int *exit_code)
  */
 void process_table(cl_t *cl, tab_t *t, int *exit_code)
 {
-    if(cl->cmds[cl->cmds_c].proc_opt != DCOL && cl->cmds[cl->cmds_c].proc_opt != DROW)
+    if(cl->cmds[cl->cmds_c].proc_opt == FIND)
+    {find_f(cl, t);}
+
+    else if(cl->cmds[cl->cmds_c].proc_opt != DCOL && cl->cmds[cl->cmds_c].proc_opt != DROW)
     {CHECK_TAB_DELETED}
     /* determine the length of the cell from one cell and write it in to another cell */
     if(cl->cmds[cl->cmds_c].proc_opt == LEN)
@@ -1824,16 +1862,16 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
     CHECK_EXIT_CODE
 
 
-    if(cl->cmds[cl->cmds_c].proc_opt >= SET && cl->cmds[cl->cmds_c].proc_opt <= LEN)
+    if(cl->cmds[cl->cmds_c].proc_opt >= CLEAR && cl->cmds[cl->cmds_c].proc_opt <= FIND)
     {
         cl->cmds[cl->cmds_c].cmd_opt = PRC;
 
         /* command set have no numbers to extract, other have */
-        if(cl->cmds[cl->cmds_c].proc_opt != SET)
+        if(cl->cmds[cl->cmds_c].proc_opt < FIND)
         {
             extract_nums(cl, n_extr_nums, exit_code);
         }
-    } else if(cl->cmds[cl->cmds_c].proc_opt >= DEF && cl->cmds[cl->cmds_c].proc_opt <= FIND)
+    } else if(cl->cmds[cl->cmds_c].proc_opt >= DEF && cl->cmds[cl->cmds_c].proc_opt < FIND)
     {
         cl->cmds[cl->cmds_c].cmd_opt = SEL;
         /* extract numbers from commands working with temporary variables */
@@ -1887,14 +1925,15 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
         /* if there's a selection cmd sets a new current selection */
     else
     {
-        get_nums(cmd, cl, t, exit_code);
-        cl->cmds[cl->cmds_c].cmd_opt = SEL;
-        cl->cmds[cl->cmds_c].proc_opt = CHANGESEL;
+        /* extract numbers from the command and initialize command with type selection */
+        get_nums(cmd, cl, exit_code);
+        cl->cmds[cl->cmds_c].proc_opt = CHANGESEL; // TODO check if it iis really neccessary
     }
-    if(cl->cmds[cl->cmds_c].proc_opt >= MIN && cl->cmds[cl->cmds_c].proc_opt <= USETMP)
+    if(ISIN_SELRANGE(cl->cmds[cl->cmds_c].proc_opt))
     {cl->cmds[cl->cmds_c].cmd_opt = SEL;}
 
-    else if(cl->cmds[cl->cmds_c].proc_opt >= SET && cl->cmds[cl->cmds_c].proc_opt <= DCOL)
+        // TODO change to the macro
+    else if(ISIN_PROCRANGE(cl->cmds[cl->cmds_c].proc_opt))
     {cl->cmds[cl->cmds_c].cmd_opt = PRC;}
 
     free(currcom);
@@ -1915,16 +1954,22 @@ void prep_for_next_cmd(carr_t *cmd, int *cmds_c, const int *pos, const int *argl
  * exit_code */
 void process_cmds(cl_t *cl, tab_t *t, int *exit_code)
 {
+#ifdef DEB
+    printf("line %d in %s cl->cmds_c %d\n", __LINE__, __FUNCTION__, cl->cmds_c);
+#endif
     /* process each initialized command */
     for(int cmd = 0; cmd <= cl->cmds_c; cmd++)
     {
+#ifdef DEB
+        printf("line %d cmd row_2 = %d, col_2 = %d\n", __LINE__, cl->cmds[cmd].row_2, cl->cmds[cmd].col_2);
+#endif
         /* expand tab to fit the selection if it is neccessary */
-        expand_tab(t, cl->cmds[cl->cmds_c].row_2, cl->cmds[cl->cmds_c].col_2, exit_code);
+        expand_tab(t, cl->cmds[cmd].row_2, cl->cmds[cmd].col_2, exit_code);
         CHECK_EXIT_CODE
-        switch(cl->cmds[cl->cmds_c].cmd_opt)
+        switch(cl->cmds[cmd].cmd_opt)
         {
             case SEL: /* selection is already set in the functinon */
-                process_sel(cl, t, exit_code);
+                process_sel(cl, t, exit_code, cmd);
                 break;
 
                 /* call a process_table() function that caalls one of inicialized functions for processing the table  */
@@ -1971,6 +2016,10 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
         init_wspased_cmd(cmd, cl, exit_code);
     }
     CHECK_EXIT_CODE
+
+#ifdef DEB
+    printf("line %d in %s cmd %d initialized\n", __LINE__, __FUNCTION__, cl->cmds_c);
+#endif
 }
 
 /**
@@ -1984,7 +2033,6 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
  */
 void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
 {
-
     //region variables
     int arglen = (int)strlen(arg);
     bool quoted = false;
@@ -1992,13 +2040,11 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
 
     /* firsst cell selection command is on the position 0,
      * also it is neccesarry to init cmds count */
-    cl->cellsel = (cl->cmds_c = 0);
+    cl->cmds_c = 0;
 
     /* set a selection to the first cell(by default) */
-    set_sel(cl, 1, 1, 1, 1, exit_code, RCCELL);
-
-    /* current command(0) is a selection */
     cl->cmds[cl->cmds_c].cmd_opt = SEL;
+    init_sel(1, 1, 1, 1, &cl->cmds[cl->cmds_c], RCCELL);
 
     /* first cmd is a 1 1(default) selection  */
     cl->cmds_c = 1;
@@ -2079,7 +2125,7 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
  * @param argv An array with cmdline arguments
  * @param exit_code exit code to change if an error occurred
  */
-void init_separators(const int argc, const char **argv, cl_t *cl, int *exit_code)
+void init_separators(const int argc, char **argv, cl_t *cl, int *exit_code)
 {
     //region variables
     cl->seps.len = 0;
@@ -2123,7 +2169,7 @@ void init_separators(const int argc, const char **argv, cl_t *cl, int *exit_code
 /**
  * calls a function to parse cmdline arguments
  */
-void process_cl_args(const int *argc, const char **argv, tab_t *t, cl_t *cl, int *exit_code)
+void process_cl_args(const int *argc, char **argv, tab_t *t, cl_t *cl, int *exit_code)
 {
     /* by default has value 1, which means there was no delim in the cmd line */
     int clarg = (cl->defaultsep) ? POSNDEL : POSWDEL;
@@ -2183,7 +2229,7 @@ void prepare_tab_bef_printing(carr_t *seps, tab_t *t, int *exit_code)
  * After every initializing checks for an exit_code to return it if the error has been occurred
  * Frees memory that was allocated while program was running.
  */
-int run_program(const int argc, const char **argv)
+int run_program(const int argc, char **argv)
 {
     //region arguments
     int exit_code = 0;
@@ -2216,9 +2262,10 @@ int run_program(const int argc, const char **argv)
 
     /* beautify the table */
     prepare_tab_bef_printing(&cl.seps, &t, &exit_code);
+    CHECK_EXIT_CODE_IN_RUN_PROGRAM
 
     /* write table to the file */
-    print_tab(&t, &cl.seps, cl.ptr);
+    print_tab(&t, &cl.seps, &cl);
 
     clear_data(&t, &cl);
 
@@ -2234,7 +2281,7 @@ void print_documentation()
            " Author: Skuratovich Aliaksandr xskura01@fit.vutbr.cz\n");
 }
 
-int main(const int argc, const char **argv)
+int main(const int argc, char **argv)
 {
 
     /* print documentation */

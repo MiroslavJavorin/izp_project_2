@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.15)
-project(untitled1 C)
-
+project(project_2)
 set(CMAKE_C_STANDARD 99)
 
-add_executable(untitled1 sps.c)
+set(GCC_COVERAGE_COMPILE_FLAGS " -Wall -Wextra -pedantic -D DEB")
+#set(GCC_COVERAGE_COMPILE_FLAGS " -Wall -Wextra -pedantic -D CMDS -D SELECT -D SHOWTAB ")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} ${GCC_COVERAGE_COMPILE_FLAGS}")
+
+add_executable(project_2 sps.c)
