@@ -2223,7 +2223,7 @@ int run_program(const int argc, const char **argv)
     clear_data(&t, &cl);
 
     /* exit_code is -1 means table has been processed successfully */
-    return (exit_code == -1) ? 0 : exit_code;
+    return exit_code;
 }
 
 /* Prints documentation, Author */
