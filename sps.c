@@ -44,7 +44,7 @@
     GRC_CHECK_EXIT_CODE\
 }
 
-#define ISIN_SELRANGE(opt) ( ((opt) >= CLEAR  && (opt) <= SET) ? true : false )
+#define ISIN_SELRANGE(opt) ( ((opt) >= DEF  && (opt) <= USETMP) ? true : false )
 #define ISIN_PROCRANGE(opt) ( (!ISIN_SELRANGE((opt)) && (opt) != NOTH) ? true : false )
 
 #define MEMBLOCK     10 /* allocation step */
@@ -119,9 +119,11 @@ typedef enum
 {
     NOTH,
 
+    /* sdelection commands */
     DEF, USE, INC,
     CHANGESEL, MIN, MAX, SETTMP, USETMP,
 
+    /* processing commands */
     CLEAR, IROW, AROW, DROW, ICOL, ACOL, DCOL,
     SWAP, AVG, SUM, COUNT, LEN, FIND, SET,
 } opts_t;
@@ -820,6 +822,15 @@ void get_nums(carr_t *cmd, cl_t *cl, int *exit_code)
 
     init_sel(nums[0], nums[1], nums[2], nums[3], &cl->cmds[cl->cmds_c], opt);
     CHECK_EXIT_CODE
+
+#ifdef DEBUG
+    printf("line %d in %s: selection command initialized [%d,%d,%d,%d]\n", __LINE__, __FUNCTION__,
+           cl->cmds[cl->cmds_c].row_1,
+           cl->cmds[cl->cmds_c].col_1,
+           cl->cmds[cl->cmds_c].row_2,
+           cl->cmds[cl->cmds_c].col_2
+    );
+#endif
 }
 
 /**
@@ -1859,10 +1870,14 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
         cl->cmds[cl->cmds_c].proc_opt = LEN;
         add_ptrn(cmd, n_extr_nums, "len ", exit_code);
     }
+#ifdef DEBUG
+    printf("line %d in %s for command \"%s\": ", __LINE__, __FUNCTION__, cmd->elems_v);
+#endif
     CHECK_EXIT_CODE
 
 
-    if(cl->cmds[cl->cmds_c].proc_opt >= CLEAR && cl->cmds[cl->cmds_c].proc_opt <= FIND)
+    /* set command otion */
+    if(ISIN_PROCRANGE(cl->cmds[cl->cmds_c].proc_opt))
     {
         cl->cmds[cl->cmds_c].cmd_opt = PRC;
 
@@ -1871,7 +1886,9 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
         {
             extract_nums(cl, n_extr_nums, exit_code);
         }
-    } else if(cl->cmds[cl->cmds_c].proc_opt >= DEF && cl->cmds[cl->cmds_c].proc_opt < FIND)
+    }
+        /* set option on selection */
+    else if(ISIN_SELRANGE(cl->cmds[cl->cmds_c].proc_opt))
     {
         cl->cmds[cl->cmds_c].cmd_opt = SEL;
         /* extract numbers from commands working with temporary variables */
@@ -1880,6 +1897,10 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
             tmp_cmds_extract_nums(cl, n_extr_nums, exit_code);
         }
     }
+#ifdef DEBUG
+    printf("option %s\n", (cl->cmds[cl->cmds_c].cmd_opt == SEL) ? "SEL" : (cl->cmds[cl->cmds_c].cmd_opt == PRC) ?
+                                                                          "PROC" : "NONE");
+#endif
 }
 
 /**
@@ -1892,12 +1913,8 @@ void init_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
  * @param t structure with a table to call table editing functions
  * @param exit_code
  */
-void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
+void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
 {
-    /* number of occurances */
-    char *currcom = (char *)calloc(cmd->elems_c, sizeof(char));
-    CHECK_ALLOC_ERR(currcom)
-
     if(!strcmp(cmd->elems_v, "irow"))
     {cl->cmds[cl->cmds_c].proc_opt = IROW;}
     else if(!strcmp(cmd->elems_v, "arow"))
@@ -1927,17 +1944,20 @@ void init_n_wspased_cmd(carr_t *cmd, cl_t *cl, tab_t *t, int *exit_code)
     {
         /* extract numbers from the command and initialize command with type selection */
         get_nums(cmd, cl, exit_code);
-        cl->cmds[cl->cmds_c].proc_opt = CHANGESEL; // TODO check if it iis really neccessary
+        cl->cmds[cl->cmds_c].proc_opt = CHANGESEL;
     }
-    if(ISIN_SELRANGE(cl->cmds[cl->cmds_c].proc_opt))
+    if(ISIN_SELRANGE(cl->cmds[cl->cmds_c].proc_opt)) // is in selection range means command has selection option
     {cl->cmds[cl->cmds_c].cmd_opt = SEL;}
 
-        // TODO change to the macro
     else if(ISIN_PROCRANGE(cl->cmds[cl->cmds_c].proc_opt))
     {cl->cmds[cl->cmds_c].cmd_opt = PRC;}
 
-    free(currcom);
+#ifdef DEBUG
+    printf("line %d in %s: for command \"%s\": command initialized: opt %s\n", __LINE__, __FUNCTION__, cmd->elems_v,
+           (cl->cmds[cl->cmds_c].cmd_opt == SEL) ? "SEL" : (cl->cmds[cl->cmds_c].cmd_opt == PRC) ? "DAPROC" : "NONE");
+#endif
     CHECK_EXIT_CODE
+
 }
 
 /* increase the number of given commands, clear the line where the previous command was */
@@ -1950,22 +1970,62 @@ void prep_for_next_cmd(carr_t *cmd, int *cmds_c, const int *pos, const int *argl
     carr_clear(cmd);
 }
 
+void change_selection_vals_in_cmd(cmd_t *cmd, tab_t *t, int *exit_code)
+{
+    if(cmd->row_1 == TAB_EDGE)
+    {
+        if(cmd->sel_opt == RCCELL)
+            cmd->row_1 = 1;
+        else cmd->row_1 = t->len;
+    }
+    if(cmd->col_1 == TAB_EDGE)
+    {
+        if(cmd->sel_opt == RCCELL)
+            cmd->col_1 = 1;
+        else cmd->col_1 = t->col_c + 1;
+    }
+    if(cmd->col_2 == TAB_EDGE)
+    {
+        cmd->col_1 = t->col_c + 1;
+    }
+    if(cmd->row_2 == TAB_EDGE)
+    {
+        cmd->row_1 = t->len;
+    }
+
+    if(cmd->row_2 < cmd->row_1 || cmd->col_2 < cmd->col_1)
+    {
+        *exit_code = VAL_UNSUPARG_ERR; // argument has unsupported value, return an eror code
+    }
+#ifdef DEBUG
+    printf("\nline %d in %s: current selection [%d,%d,%d,%d]. With exit_code %d\n", __LINE__, __FUNCTION__,
+           cmd->row_1, cmd->col_1, cmd->row_2, cmd->col_2, *exit_code);
+#endif
+}
+
 /* Pocess cmdm, check if the cmd have ben initialized and call function to process the table or change an
  * exit_code */
 void process_cmds(cl_t *cl, tab_t *t, int *exit_code)
 {
-#ifdef DEB
-    printf("line %d in %s cl->cmds_c %d\n", __LINE__, __FUNCTION__, cl->cmds_c);
-#endif
+
     /* process each initialized command */
     for(int cmd = 0; cmd <= cl->cmds_c; cmd++)
     {
-#ifdef DEB
-        printf("line %d cmd row_2 = %d, col_2 = %d\n", __LINE__, cl->cmds[cmd].row_2, cl->cmds[cmd].col_2);
-#endif
-        /* expand tab to fit the selection if it is neccessary */
+        /* change TAB_EDGE value to the curent value in the table */
+        change_selection_vals_in_cmd(&cl->cmds[cmd], t, exit_code);
+        CHECK_EXIT_CODE
+
         expand_tab(t, cl->cmds[cmd].row_2, cl->cmds[cmd].col_2, exit_code);
         CHECK_EXIT_CODE
+#ifdef DEBUG
+        printf("line %d in %s: cmd %s with vals [%d,%d,%d,%d]\n", __LINE__, __FUNCTION__, (cl->cmds[cmd].cmd_opt ==
+                                                                                           SEL) ? "SEL" :
+                                                                                          (cl->cmds[cmd].cmd_opt ==
+                                                                                           PRC) ? "PROC" : "NONE",
+               cl->cmds[cmd].row_1, cl->cmds[cmd].col_1,
+               cl->cmds[cmd].row_2, cl->cmds[cmd].col_2);
+#endif
+
         switch(cl->cmds[cmd].cmd_opt)
         {
             case SEL: /* selection is already set in the functinon */
@@ -1997,18 +2057,15 @@ void create_cmd(cmd_t *cmd)
 }
 
 
-void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
+void init_cmd(carr_t *cmd, cl_t *cl, int *exit_code)
 {
-    /* fill everyrhing with 0s */
-    create_cmd(&cl->cmds[cl->cmds_c]);
-
-    cell_trim(cmd, exit_code); /* trim a command */ //
+    cell_trim(cmd, exit_code); /* trim a command */
     CHECK_EXIT_CODE
 
     /* edit structure of the table or change current selection */
     if(strchr(cmd->elems_v, ' ') == NULL)
     {
-        init_n_wspased_cmd(cmd, cl, t, exit_code);
+        init_n_wspased_cmd(cmd, cl, exit_code);
     }
         /* init and call data processing functions or process temp variables */
     else
@@ -2017,8 +2074,8 @@ void init_cmd(carr_t *cmd, tab_t *t, cl_t *cl, int *exit_code)
     }
     CHECK_EXIT_CODE
 
-#ifdef DEB
-    printf("line %d in %s cmd %d initialized\n", __LINE__, __FUNCTION__, cl->cmds_c);
+#ifdef DEBUG
+    printf("line %d in %s: cmd %d initialized\n\n", __LINE__, __FUNCTION__, cl->cmds_c);
 #endif
 }
 
@@ -2048,32 +2105,39 @@ void init_cmds(carr_t *cmd, const char *arg, cl_t *cl, tab_t *t, int *exit_code)
 
     /* first cmd is a 1 1(default) selection  */
     cl->cmds_c = 1;
-    cl->temps_c = 0;
+    cl->temps_c = 0; // number of temp seleections
 
     /* declare and fill with 0s all temp selection commands */
     for(int i = 0; i < NUM_TMP_SELS; i++)
     {
         create_cmd(&cl->tmpsel[i]);
     }
+    /* walk through all commands except 1st and init them with 0s */
+    for(int i = cl->cmds_c; i < CMDSCOUNT; i++)
+    {
+        create_cmd(&cl->cmds[i]);
+    }
     //endregion
 
-    /* walk through commands */
+
+    /* walk through commands entered in commandline */
     for(int p = 0; p < arglen; p++)
     {
         if(cl->cmds_c == CMDSCOUNT)
         {
             *exit_code = TOO_MUCH_CMDS_ERR;
         }
+        CHECK_EXIT_CODE
 
         if((arg[p] == ';' && !backslashed && !quoted) || p == arglen - 1)
         {
             if(arg[p] != ';' && arg[p] != ']')
             {
-                a_carr(cmd, arg[p], exit_code);
+                a_carr(cmd, arg[p], exit_code); // we dont need to add ; and ] to the command
             }
 
             /* initialize a cmd */
-            init_cmd(cmd, t, cl, exit_code);
+            init_cmd(cmd, cl, exit_code);
             CHECK_EXIT_CODE
 
             prep_for_next_cmd(cmd, &cl->cmds_c, &p, &arglen);
@@ -2237,39 +2301,91 @@ int run_program(const int argc, char **argv)
     cl_t cl;
     //endregion
 
+#ifdef DEBUG
+    printf("CREATING TABLE...\n");
+#endif
     /* allocate a new empty table */
     table_ctor(&t, 1, 1, 1, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
+#ifdef DEBUG
+    printf("DONE.\n\n");
+#endif
 
     /* initialize a file pointer */
     cl.ptr = NULL;
 
+
+#ifdef DEBUG
+    printf("INITIAZING SEPARATORS...\n");
+#endif
     /* initialize separators from cmdline */
     init_separators(argc, argv, &cl, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
+#ifdef DEBUG
+    printf("DONE.\n\n");
+#endif
 
+#ifdef DEBUG
+    printf("GETTING TABLE...\n");
+#endif
     /* adds table to the structure */
     get_table(argc, argv, &t, &cl, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
+#ifdef DEBUG
+    printf("DONE.\n\n");
+#endif
 
-    /* parse cmdline arguments and process table for them */
+
+#ifdef DEBUG
+    printf("INITIALIZING COMMANDS...\n");
+#endif
+    /* parse cmdline arguments and initialize an arrasy with structures with commands */
     process_cl_args(&argc, argv, &t, &cl, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
+#ifdef DEBUG
+    printf("DONE.\n\n");
+#endif
 
+
+#ifdef DEBUG
+    printf("EXECUTING COMMANDS...\n");
+#endif
     /* call functions extracted from commandline */
     process_cmds(&cl, &t, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
+#ifdef DEBUG
+    printf("DONE.\n\n");
+#endif
 
+
+#ifdef DEBUG
+    printf("PREPARING TABLE...\n");
+#endif
     /* beautify the table */
     prepare_tab_bef_printing(&cl.seps, &t, &exit_code);
     CHECK_EXIT_CODE_IN_RUN_PROGRAM
+#ifdef DEBUG
+    printf("DONE.\n\n");
+#endif
 
+#ifdef DEBUG
+    printf("PRINTING TABLE...\n");
+#endif
     /* write table to the file */
     print_tab(&t, &cl.seps, &cl);
+#ifdef DEBUG
+    printf("DONE.\n\n");
+#endif
 
+#ifdef DEBUG
+    printf("FREEING MEMORY...\n");
+#endif
+    /* finally free allocated memory */
     clear_data(&t, &cl);
+#ifdef DEBUG
+    printf("DONE.\n\n");
+#endif
 
-    /* exit_code is -1 means table has been processed successfully */
     return exit_code;
 }
 
