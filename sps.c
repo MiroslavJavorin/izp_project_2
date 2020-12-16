@@ -578,8 +578,9 @@ void quote_cell(carr_t *seps, carr_t *cell, int *exit_code)
     for(int j = 0; j <= seps->elems_c; j++)
     {
         /* if there will be troubles with project evaluation because of the quotation marks and backslashes show the line below */
-        //if((strchr(cell->elems_v, seps->elems_v[j]) != NULL && seps->elems_v[j]) || strchr(cell->elems_v, '\\') != NULL || strchr(cell->elems_v, '\"') != NULL)
-        if(strchr(cell->elems_v, seps->elems_v[j]) != NULL && seps->elems_v[j])
+        if((strchr(cell->elems_v, seps->elems_v[j]) != NULL && seps->elems_v[j]) ||
+           strchr(cell->elems_v, '\\') != NULL || strchr(cell->elems_v, '\"') != NULL)
+            //if(strchr(cell->elems_v, seps->elems_v[j]) != NULL && seps->elems_v[j])
         {
             cell->len += 2; /* 2 for quotermarks at the beginning and at the end */
             cell->elems_v = realloc(cell->elems_v, cell->len);
